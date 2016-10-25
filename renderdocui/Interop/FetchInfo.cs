@@ -30,6 +30,178 @@ using renderdocui.Code;
 
 namespace renderdoc
 {
+    //////////////////////////// BEGIN HACK /////////////////////////////////
+
+    [Flags]
+    public enum VkAccessFlags
+    {
+        INDIRECT_COMMAND_READ_BIT = 0x00000001,
+        INDEX_READ_BIT = 0x00000002,
+        VERTEX_ATTRIBUTE_READ_BIT = 0x00000004,
+        UNIFORM_READ_BIT = 0x00000008,
+        INPUT_ATTACHMENT_READ_BIT = 0x00000010,
+        SHADER_READ_BIT = 0x00000020,
+        SHADER_WRITE_BIT = 0x00000040,
+        COLOR_ATTACHMENT_READ_BIT = 0x00000080,
+        COLOR_ATTACHMENT_WRITE_BIT = 0x00000100,
+        DEPTH_STENCIL_ATTACHMENT_READ_BIT = 0x00000200,
+        DEPTH_STENCIL_ATTACHMENT_WRITE_BIT = 0x00000400,
+        TRANSFER_READ_BIT = 0x00000800,
+        TRANSFER_WRITE_BIT = 0x00001000,
+        HOST_READ_BIT = 0x00002000,
+        HOST_WRITE_BIT = 0x00004000,
+        MEMORY_READ_BIT = 0x00008000,
+        MEMORY_WRITE_BIT = 0x00010000,
+    };
+
+    [Flags]
+    public enum VkImageAspectFlags
+    {
+        COLOR_BIT = 0x00000001,
+        DEPTH_BIT = 0x00000002,
+        STENCIL_BIT = 0x00000004,
+        METADATA_BIT = 0x00000008,
+    };
+
+    public enum VkImageLayout
+    {
+        UNDEFINED = 0,
+        GENERAL = 1,
+        COLOR_ATTACHMENT_OPTIMAL = 2,
+        DEPTH_STENCIL_ATTACHMENT_OPTIMAL = 3,
+        DEPTH_STENCIL_READ_ONLY_OPTIMAL = 4,
+        SHADER_READ_ONLY_OPTIMAL = 5,
+        TRANSFER_SRC_OPTIMAL = 6,
+        TRANSFER_DST_OPTIMAL = 7,
+        PREINITIALIZED = 8,
+        PRESENT_SRC_KHR = 1000001002,
+    };
+
+    [Flags]
+    public enum VkPipelineStageFlags
+    {
+        TOP_OF_PIPE_BIT = 0x00000001,
+        DRAW_INDIRECT_BIT = 0x00000002,
+        VERTEX_INPUT_BIT = 0x00000004,
+        VERTEX_SHADER_BIT = 0x00000008,
+        TESSELLATION_CONTROL_SHADER_BIT = 0x00000010,
+        TESSELLATION_EVALUATION_SHADER_BIT = 0x00000020,
+        GEOMETRY_SHADER_BIT = 0x00000040,
+        FRAGMENT_SHADER_BIT = 0x00000080,
+        EARLY_FRAGMENT_TESTS_BIT = 0x00000100,
+        LATE_FRAGMENT_TESTS_BIT = 0x00000200,
+        COLOR_ATTACHMENT_OUTPUT_BIT = 0x00000400,
+        COMPUTE_SHADER_BIT = 0x00000800,
+        TRANSFER_BIT = 0x00001000,
+        BOTTOM_OF_PIPE_BIT = 0x00002000,
+        HOST_BIT = 0x00004000,
+        ALL_GRAPHICS_BIT = 0x00008000,
+        ALL_COMMANDS_BIT = 0x00010000,
+    };
+
+    [StructLayout(LayoutKind.Sequential)]
+    public class VkImageSubresourceRange
+    {
+        public static UInt32 VK_REMAINING_MIP_LEVELS = UInt32.MaxValue;
+        public static UInt32 VK_REMAINING_ARRAY_LAYERS = UInt32.MaxValue;
+
+        public VkImageAspectFlags aspectMask = VkImageAspectFlags.COLOR_BIT;
+        public UInt32 baseMipLevel;
+        public UInt32 levelCount = VK_REMAINING_MIP_LEVELS;
+        public UInt32 baseArrayLayer;
+        public UInt32 layerCount = VK_REMAINING_ARRAY_LAYERS;
+
+        public override string ToString()
+        {
+            return String.Format("{0} (mips {1} - {2}) (layers {3} - {4})", aspectMask, baseMipLevel, levelCount == VK_REMAINING_MIP_LEVELS ? "ALL" : levelCount.ToString(), baseArrayLayer, layerCount == VK_REMAINING_ARRAY_LAYERS ? "ALL" : layerCount.ToString());
+        }
+    };
+
+    [StructLayout(LayoutKind.Sequential)]
+    public class VkMemoryBarrier
+    {
+        private UInt32 sType = 46; // VK_STRUCTURE_TYPE_MEMORY_BARRIER
+        private UIntPtr pNext = UIntPtr.Zero;
+        VkAccessFlags      srcAccessMask;
+        VkAccessFlags      dstAccessMask;
+
+        public override string ToString()
+        {
+            return String.Format("VkMemoryBarrier[ src: {0} dst: {1} ]", srcAccessMask, dstAccessMask);
+        }
+    };
+
+    [StructLayout(LayoutKind.Sequential)]
+    public class VkBufferMemoryBarrier
+    {
+        public static UInt64 VK_WHOLE_SIZE = UInt64.MaxValue;
+
+        private UInt32 sType = 44; // VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER
+        private UIntPtr pNext = UIntPtr.Zero;
+        VkAccessFlags srcAccessMask;
+        VkAccessFlags dstAccessMask;
+        private UInt32 srcQueueFamilyIndex = 0;
+        private UInt32 dstQueueFamilyIndex = 0;
+        public ResourceId buffer;
+        public UInt64 offset;
+        public UInt64 size = VK_WHOLE_SIZE;
+
+        public override string ToString()
+        {
+            return String.Format("VkMemoryBarrier[ src: {0} dst: {1} buf: {2} offs: {3} size: {4}]", srcAccessMask, dstAccessMask, buffer, offset, size == VK_WHOLE_SIZE ? "VK_WHOLE_SIZE" : size.ToString());
+        }
+    };
+
+    [StructLayout(LayoutKind.Sequential)]
+    public class VkImageMemoryBarrier
+    {
+        private UInt32 sType = 45; // VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER
+        private UIntPtr pNext = UIntPtr.Zero;
+        public VkAccessFlags srcAccessMask;
+        public VkAccessFlags dstAccessMask;
+        public VkImageLayout oldLayout;
+        public VkImageLayout newLayout;
+        private UInt32 srcQueueFamilyIndex = 0;
+        private UInt32 dstQueueFamilyIndex = 0;
+        public ResourceId image;
+
+        // inlined subresourceRange
+        private VkImageAspectFlags subresourceRange_aspectMask = VkImageAspectFlags.COLOR_BIT;
+        private UInt32 subresourceRange_baseMipLevel;
+        private UInt32 subresourceRange_levelCount = VkImageSubresourceRange.VK_REMAINING_MIP_LEVELS;
+        private UInt32 subresourceRange_baseArrayLayer;
+        private UInt32 subresourceRange_layerCount = VkImageSubresourceRange.VK_REMAINING_ARRAY_LAYERS;
+
+        public VkImageSubresourceRange subresourceRange
+        {
+            get
+            {
+                VkImageSubresourceRange ret = new VkImageSubresourceRange();
+                ret.aspectMask = subresourceRange_aspectMask;
+                ret.baseMipLevel = subresourceRange_baseMipLevel;
+                ret.levelCount = subresourceRange_levelCount;
+                ret.baseArrayLayer = subresourceRange_baseArrayLayer;
+                ret.layerCount = subresourceRange_layerCount;
+                return ret;
+            }
+            set
+            {
+                subresourceRange_aspectMask = value.aspectMask;
+                subresourceRange_baseMipLevel = value.baseMipLevel;
+                subresourceRange_levelCount = value.levelCount;
+                subresourceRange_baseArrayLayer = value.baseArrayLayer;
+                subresourceRange_layerCount = value.layerCount;
+            }
+        }
+
+        public override string ToString()
+        {
+            return String.Format("VkMemoryBarrier[ src: {0} dst: {1} image: {2} range: {3} oldLayout: {4} newLayout: {5}]", srcAccessMask, dstAccessMask, image, subresourceRange, oldLayout, newLayout);
+        }
+    };
+
+    ///////////////////////////// END HACK //////////////////////////////////
+
     public struct Vec3f
     {
         public Vec3f(float X, float Y, float Z) { x = X; y = Y; z = Z; }

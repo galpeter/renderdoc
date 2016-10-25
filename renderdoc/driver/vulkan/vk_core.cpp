@@ -233,6 +233,81 @@ void VkInitParams::Set(const VkInstanceCreateInfo *pCreateInfo, ResourceId inst)
   InstanceID = inst;
 }
 
+//////////////////////////// BEGIN HACK /////////////////////////////////
+
+WrappedVulkan *vk = NULL;
+
+std::map<uint64_t, BarrierHack> replacements;
+std::map<uint64_t, BarrierHack> additions;
+
+void BarrierHack::DoUnwrap()
+{
+  if(unwrapped)
+    return;
+
+  for(size_t n = 0; n < i.size(); n++)
+  {
+    VkImageMemoryBarrier &im = i[n];
+    ResourceId id = ResourceId((uintptr_t)im.image, true);
+    im.image = Unwrap(vk->GetResourceManager()->GetLiveHandle<VkImage>(id));
+  }
+
+  for(size_t n = 0; n < b.size(); n++)
+  {
+    VkBufferMemoryBarrier &buf = b[n];
+    ResourceId id = ResourceId((uintptr_t)buf.buffer, true);
+    buf.buffer = Unwrap(vk->GetResourceManager()->GetLiveHandle<VkBuffer>(id));
+  }
+
+  unwrapped = true;
+}
+
+extern "C" RENDERDOC_API uint64_t RENDERDOC_CC HACK_GetEventOffset(uint32_t eventID)
+{
+  return vk->GetEvent(eventID).fileOffset;
+}
+
+extern "C" RENDERDOC_API void RENDERDOC_CC HACK_Barrier(
+    uint64_t fileOffset, bool32 replace, VkPipelineStageFlagBits srcStages,
+    VkPipelineStageFlagBits dstStages, VkImageMemoryBarrier *images, int32_t numImages,
+    VkBufferMemoryBarrier *buffers, int32_t numBuffers, VkMemoryBarrier *memories, int32_t numMems)
+{
+  BarrierHack barr;
+
+  barr.unwrapped = false;
+
+  barr.src = srcStages;
+  barr.dst = dstStages;
+
+  barr.i.reserve(numImages);
+
+  for(int i = 0; i < numImages; i++)
+    barr.i.push_back(images[i]);
+
+  barr.b.reserve(numBuffers);
+
+  for(int i = 0; i < numBuffers; i++)
+    barr.b.push_back(buffers[i]);
+
+  barr.m.reserve(numMems);
+
+  for(int i = 0; i < numMems; i++)
+    barr.m.push_back(memories[i]);
+
+  if(replace)
+    replacements[fileOffset] = barr;
+  else
+    additions[fileOffset] = barr;
+}
+
+extern "C" RENDERDOC_API void RENDERDOC_CC HACK_ClearBarriers()
+{
+  replacements.clear();
+  additions.clear();
+}
+
+///////////////////////////// END HACK //////////////////////////////////
+
 WrappedVulkan::WrappedVulkan(const char *logFilename) : m_RenderState(&m_CreationInfo)
 {
 #if defined(RELEASE)
@@ -266,6 +341,12 @@ WrappedVulkan::WrappedVulkan(const char *logFilename) : m_RenderState(&m_Creatio
   m_Replay.SetDriver(this);
 
   m_FrameCounter = 0;
+
+  //////////////////////////// BEGIN HACK /////////////////////////////////
+
+  vk = this;
+
+  ///////////////////////////// END HACK //////////////////////////////////
 
   m_AppControlledCapture = false;
 
@@ -2107,6 +2188,46 @@ void WrappedVulkan::ProcessChunk(uint64_t offset, VulkanChunkType context)
       break;
     }
   }
+
+  //////////////////////////// BEGIN HACK /////////////////////////////////
+
+  if(m_LastCmdBufferID != ResourceId())
+  {
+    VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
+
+    if(m_State == EXECUTING)
+    {
+      if(ShouldRerecordCmd(m_LastCmdBufferID) && InRerecordRange(m_LastCmdBufferID))
+        commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
+    }
+    else if(GetResourceManager()->HasLiveResource(m_LastCmdBufferID))
+    {
+      commandBuffer = GetResourceManager()->GetLiveHandle<VkCommandBuffer>(m_LastCmdBufferID);
+    }
+
+    if(commandBuffer != VK_NULL_HANDLE)
+    {
+      auto it = additions.find(m_CurChunkOffset);
+
+      if(it != additions.end())
+      {
+        BarrierHack &barr = it->second;
+
+        barr.DoUnwrap();
+
+        ObjDisp(commandBuffer)
+            ->CmdPipelineBarrier(Unwrap(commandBuffer), VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                                 VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, (uint32_t)barr.m.size(),
+                                 &barr.m[0], (uint32_t)barr.b.size(), &barr.b[0],
+                                 (uint32_t)barr.i.size(), &barr.i[0]);
+
+        GetResourceManager()->RecordBarriers(m_BakedCmdBufferInfo[m_LastCmdBufferID].imgbarriers,
+                                             m_ImageLayouts, (uint32_t)barr.i.size(), &barr.i[0]);
+      }
+    }
+  }
+
+  ///////////////////////////// END HACK //////////////////////////////////
 }
 
 void WrappedVulkan::ReplayLog(uint32_t startEventID, uint32_t endEventID, ReplayLogType replayType)

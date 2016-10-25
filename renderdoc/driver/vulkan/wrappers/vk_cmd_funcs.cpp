@@ -1856,6 +1856,28 @@ bool WrappedVulkan::Serialise_vkCmdPipelineBarrier(
   SAFE_DELETE_ARRAY(bufMemBarriers);
   SAFE_DELETE_ARRAY(imgMemBarriers);
 
+  //////////////////////////// BEGIN HACK /////////////////////////////////
+
+  if(m_State <= EXECUTING)
+  {
+    auto it = replacements.find(m_CurChunkOffset);
+
+    if(it != replacements.end())
+    {
+      it->second.DoUnwrap();
+
+      imgBarriers = it->second.i;
+      bufBarriers = it->second.b;
+      memCount = (uint32_t)it->second.m.size();
+      memBarriers = &it->second.m[0];
+
+      srcStages = it->second.src;
+      destStages = it->second.dst;
+    }
+  }
+
+  //////////////////////////// END HACK /////////////////////////////////
+
   if(m_State == EXECUTING)
   {
     if(ShouldRerecordCmd(cmdid) && InRerecordRange(cmdid))

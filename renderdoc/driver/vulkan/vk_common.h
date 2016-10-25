@@ -50,6 +50,26 @@
 // buffer replay is happening
 //#define VERBOSE_PARTIAL_REPLAY
 
+//////////////////////////// BEGIN HACK /////////////////////////////////
+
+struct BarrierHack
+{
+  VkPipelineStageFlagBits src, dst;
+
+  bool unwrapped;
+
+  void DoUnwrap();
+
+  std::vector<VkImageMemoryBarrier> i;
+  std::vector<VkBufferMemoryBarrier> b;
+  std::vector<VkMemoryBarrier> m;
+};
+
+extern std::map<uint64_t, BarrierHack> replacements;
+extern std::map<uint64_t, BarrierHack> additions;
+
+///////////////////////////// END HACK //////////////////////////////////
+
 ResourceFormat MakeResourceFormat(VkFormat fmt);
 VkFormat MakeVkFormat(ResourceFormat fmt);
 PrimitiveTopology MakePrimitiveTopology(VkPrimitiveTopology Topo, uint32_t patchControlPoints);

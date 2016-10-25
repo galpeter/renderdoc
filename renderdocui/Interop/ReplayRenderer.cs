@@ -278,6 +278,90 @@ namespace renderdoc
 
     public class ReplayRenderer
     {
+        //////////////////////////// BEGIN HACK /////////////////////////////////
+
+
+        [DllImport("renderdoc.dll", CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl)]
+        private static extern UInt64 HACK_GetEventOffset(UInt32 eventID);
+
+        [DllImport("renderdoc.dll", CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr HACK_Barrier(UInt64 fileOffset, bool replace,
+            VkPipelineStageFlags srcStages, VkPipelineStageFlags dstStages,
+            IntPtr images, Int32 numImages,
+            IntPtr buffers, Int32 numBuffers,
+            IntPtr memories, Int32 numMems);
+
+        [DllImport("renderdoc.dll", CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void HACK_ClearBarriers();
+
+        private static void HACK_Marshal(UInt64 fileOffset, bool replace, VkPipelineStageFlags srcStages, VkPipelineStageFlags dstStages, VkImageMemoryBarrier[] images, VkBufferMemoryBarrier[] buffers, VkMemoryBarrier[] memories)
+        {
+            IntPtr imArray = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(VkImageMemoryBarrier)) * images.Length);
+            IntPtr bufArray = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(VkBufferMemoryBarrier)) * buffers.Length);
+            IntPtr memArray = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(VkMemoryBarrier)) * memories.Length);
+
+            IntPtr ptr = imArray;
+
+            for (int i = 0; i < images.Length; i++)
+            {
+                Marshal.StructureToPtr(images[i], ptr, false);
+                ptr = IntPtr.Add(ptr, Marshal.SizeOf(images[i]));
+            }
+
+            ptr = bufArray;
+
+            for (int i = 0; i < buffers.Length; i++)
+            {
+                Marshal.StructureToPtr(buffers[i], ptr, false);
+                ptr = IntPtr.Add(ptr, Marshal.SizeOf(buffers[i]));
+            }
+
+            ptr = memArray;
+
+            for (int i = 0; i < memories.Length; i++)
+            {
+                Marshal.StructureToPtr(memories[i], ptr, false);
+                ptr = IntPtr.Add(ptr, Marshal.SizeOf(memories[i]));
+            }
+
+            HACK_Barrier(fileOffset, replace, srcStages, dstStages, imArray, images.Length, bufArray, buffers.Length, memArray, memories.Length);
+
+            Marshal.FreeHGlobal(imArray);
+            Marshal.FreeHGlobal(bufArray);
+            Marshal.FreeHGlobal(memArray);
+        }
+
+        public static UInt64 GetEventOffset(UInt32 eventID)
+        {
+            return HACK_GetEventOffset(eventID);
+        }
+
+        public static void ReplaceBarrier(UInt64 fileOffset,
+            VkPipelineStageFlags srcStages, VkPipelineStageFlags dstStages,
+            VkImageMemoryBarrier[] images,
+            VkBufferMemoryBarrier[] buffers,
+            VkMemoryBarrier[] memories)
+        {
+            HACK_Marshal(fileOffset, true, srcStages, dstStages, images, buffers, memories);
+        }
+
+        public static void AddBarrierAfter(UInt64 fileOffset,
+            VkPipelineStageFlags srcStages, VkPipelineStageFlags dstStages,
+            VkImageMemoryBarrier[] images,
+            VkBufferMemoryBarrier[] buffers,
+            VkMemoryBarrier[] memories)
+        {
+            HACK_Marshal(fileOffset, false, srcStages, dstStages, images, buffers, memories);
+        }
+
+        public static void ClearBarriers()
+        {
+            HACK_ClearBarriers();
+        }
+
+        ///////////////////////////// END HACK //////////////////////////////////
+
+
         [DllImport("renderdoc.dll", CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl)]
         private static extern void ReplayRenderer_Shutdown(IntPtr real);
 
