@@ -485,6 +485,13 @@ public:
                                        const char *name);
   IMPLEMENT_FUNCTION_THREAD_SERIALISED(void, ReleaseResource, ID3D12DeviceChild *res);
 
+  // D3D11On12
+
+  void CreateD3D11On12Resource(IUnknown *pResource12, D3D12_RESOURCE_STATES param2,
+                               D3D12_RESOURCE_STATES param3, ID3D11Resource *wrappedRes);
+  void AcquireD3D11On12Resources(ID3D11Resource *const *ppResources, UINT NumResources);
+  void ReleaseD3D11On12Resources(ID3D11Resource *const *ppResources, UINT NumResources);
+
   //////////////////////////////
   // implement IUnknown
   ULONG STDMETHODCALLTYPE AddRef() { return m_RefCounter.AddRef(); }

@@ -34,6 +34,10 @@
 #include "driver/dxgi/dxgi_common.h"
 #include "driver/shaders/dxbc/dxbc_compile.h"
 
+// define this to 0 if you e.g. haven't compiled the D3D12 code and don't need
+// the 11On12 support.
+#define RENDERDOC_D3D11_ON_12_INTEROP 1
+
 class WrappedID3D11Device;
 struct D3D11RenderState;
 

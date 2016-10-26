@@ -874,3 +874,5 @@ template <>
 ID3D12DeviceChild *Unwrap(ID3D12DeviceChild *ptr);
 template <>
 D3D12ResourceRecord *GetRecord(ID3D12DeviceChild *ptr);
+
+ID3D12DeviceChild *UnwrapUnknown(IUnknown *ptr);

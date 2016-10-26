@@ -33,6 +33,57 @@
 #include "d3d12_command_queue.h"
 #include "d3d12_resources.h"
 
+// define functions that are called from WrappedID3D11Device if D3D11On12 is active
+
+void UnwrapD3D12Device(IUnknown *in, WrappedID3D12Device **out, IUnknown **unwrapped)
+{
+  if(WrappedID3D12Device::IsAlloc(in))
+  {
+    *out = (WrappedID3D12Device *)in;
+    *unwrapped = (*out)->GetReal();
+  }
+  else
+  {
+    *out = NULL;
+    *unwrapped = NULL;
+  }
+}
+
+void UnwrapD3D12Queue(IUnknown *in, IUnknown **unwrapped)
+{
+  if(WrappedID3D12CommandQueue::IsAlloc(in))
+    *unwrapped = ((WrappedID3D12CommandQueue *)in)->GetReal();
+  else
+    *unwrapped = NULL;
+}
+
+IUnknown *UnwrapD3D12Resource(IUnknown *in)
+{
+  return UnwrapUnknown(in);
+}
+
+void CreateD3D11On12Resource(WrappedID3D12Device *D3D12, IUnknown *pResource12, UINT InState,
+                             UINT OutState, ID3D11Resource *wrappedRes)
+{
+  RDCCOMPILE_ASSERT(sizeof(D3D12_RESOURCE_STATES) == sizeof(UINT),
+                    "D3D12_RESOURCE_STATES enum is not UINT sized!");
+
+  D3D12->CreateD3D11On12Resource(pResource12, (D3D12_RESOURCE_STATES)InState,
+                                 (D3D12_RESOURCE_STATES)OutState, wrappedRes);
+}
+
+void AcquireD3D11On12Resources(WrappedID3D12Device *D3D12, ID3D11Resource *const *ppResources,
+                               UINT NumResources)
+{
+  D3D12->AcquireD3D11On12Resources(ppResources, NumResources);
+}
+
+void ReleaseD3D11On12Resources(WrappedID3D12Device *D3D12, ID3D11Resource *const *ppResources,
+                               UINT NumResources)
+{
+  D3D12->ReleaseD3D11On12Resources(ppResources, NumResources);
+}
+
 // use locally cached serialiser, per-thread
 #undef GET_SERIALISER
 #define GET_SERIALISER localSerialiser
@@ -501,6 +552,22 @@ HRESULT WrappedID3D12Device::QueryInterface(REFIID riid, void **ppvObject)
   }
 
   return m_RefCounter.QueryInterface(riid, ppvObject);
+}
+
+void WrappedID3D12Device::CreateD3D11On12Resource(IUnknown *pResource12, D3D12_RESOURCE_STATES param2,
+                                                  D3D12_RESOURCE_STATES param3,
+                                                  ID3D11Resource *wrappedRes)
+{
+}
+
+void WrappedID3D12Device::AcquireD3D11On12Resources(ID3D11Resource *const *ppResources,
+                                                    UINT NumResources)
+{
+}
+
+void WrappedID3D12Device::ReleaseD3D11On12Resources(ID3D11Resource *const *ppResources,
+                                                    UINT NumResources)
+{
 }
 
 void WrappedID3D12Device::CheckForDeath()

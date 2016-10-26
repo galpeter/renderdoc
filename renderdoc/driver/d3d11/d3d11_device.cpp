@@ -380,6 +380,10 @@ WrappedID3D11Device::WrappedID3D11Device(ID3D11Device *realDevice, D3D11InitPara
   // create a temporary and grab its resource ID
   m_ResourceID = ResourceIDGen::GetNewUniqueID();
 
+  m_D3D11On12 = NULL;
+  m_D3D12 = NULL;
+  m_WrappedD3D11On12.m_pDevice = this;
+
   m_DeviceRecord = NULL;
 
   if(!RenderDoc::Inst().IsReplayApp())
@@ -391,7 +395,8 @@ WrappedID3D11Device::WrappedID3D11Device(ID3D11Device *realDevice, D3D11InitPara
     m_DeviceRecord->NumSubResources = 0;
     m_DeviceRecord->SubResources = NULL;
 
-    RenderDoc::Inst().AddDeviceFrameCapturer((ID3D11Device *)this, this);
+    if(params)
+      RenderDoc::Inst().AddDeviceFrameCapturer((ID3D11Device *)this, this);
   }
 
   ID3D11DeviceContext *context = NULL;
@@ -433,7 +438,10 @@ WrappedID3D11Device::WrappedID3D11Device(ID3D11Device *realDevice, D3D11InitPara
     RDCDEBUG("Couldn't get ID3D11InfoQueue.");
   }
 
-  m_InitParams = *params;
+  if(params)
+    m_InitParams = *params;
+  else
+    RDCEraseEl(m_InitParams);
 
   // ATI workaround - these dlls can get unloaded and cause a crash.
 
@@ -468,7 +476,8 @@ WrappedID3D11Device::~WrappedID3D11Device()
   if(m_pCurrentWrappedDevice == this)
     m_pCurrentWrappedDevice = NULL;
 
-  RenderDoc::Inst().RemoveDeviceFrameCapturer((ID3D11Device *)this);
+  if(m_InitParams.SDKVersion != 0)
+    RenderDoc::Inst().RemoveDeviceFrameCapturer((ID3D11Device *)this);
 
   for(auto it = m_CachedStateObjects.begin(); it != m_CachedStateObjects.end(); ++it)
     if(*it)
@@ -480,6 +489,8 @@ WrappedID3D11Device::~WrappedID3D11Device()
   SAFE_RELEASE(m_pDevice2);
   SAFE_RELEASE(m_pDevice3);
   SAFE_RELEASE(m_pDevice4);
+
+  SAFE_RELEASE(m_D3D11On12);
 
   SAFE_RELEASE(m_pImmediateContext);
 
@@ -552,6 +563,45 @@ ULONG STDMETHODCALLTYPE DummyID3D11Debug::Release()
 {
   m_pDevice->Release();
   return 1;
+}
+
+// this class is only split out to avoid multiple inheritance problems. Just forward to the device
+// for all functions
+HRESULT STDMETHODCALLTYPE WrappedID3D11On12Device::QueryInterface(REFIID riid, void **ppvObject)
+{
+  return m_pDevice->QueryInterface(riid, ppvObject);
+}
+
+ULONG STDMETHODCALLTYPE WrappedID3D11On12Device::AddRef()
+{
+  return m_pDevice->AddRef();
+}
+
+ULONG STDMETHODCALLTYPE WrappedID3D11On12Device::Release()
+{
+  return m_pDevice->Release();
+}
+
+HRESULT STDMETHODCALLTYPE WrappedID3D11On12Device::CreateWrappedResource(
+    _In_ IUnknown *pResource12, _In_ const D3D11_RESOURCE_FLAGS *pFlags11,
+    UINT InState,     // D3D12_RESOURCE_STATES
+    UINT OutState,    // D3D12_RESOURCE_STATES
+    REFIID riid, _COM_Outptr_opt_ void **ppResource11)
+{
+  return m_pDevice->CreateWrappedResource(pResource12, pFlags11, InState, OutState, riid,
+                                          ppResource11);
+}
+
+void STDMETHODCALLTYPE WrappedID3D11On12Device::ReleaseWrappedResources(
+    _In_reads_(NumResources) ID3D11Resource *const *ppResources, UINT NumResources)
+{
+  m_pDevice->ReleaseWrappedResources(ppResources, NumResources);
+}
+
+void STDMETHODCALLTYPE WrappedID3D11On12Device::AcquireWrappedResources(
+    _In_reads_(NumResources) ID3D11Resource *const *ppResources, UINT NumResources)
+{
+  m_pDevice->AcquireWrappedResources(ppResources, NumResources);
 }
 
 HRESULT STDMETHODCALLTYPE WrappedID3D11Debug::QueryInterface(REFIID riid, void **ppvObject)
@@ -780,6 +830,19 @@ HRESULT WrappedID3D11Device::QueryInterface(REFIID riid, void **ppvObject)
       *ppvObject = (ID3D11Debug *)&m_DummyDebug;
       m_DummyDebug.AddRef();
       return S_OK;
+    }
+  }
+  else if(riid == __uuidof(ID3D11On12Device))
+  {
+    if(m_D3D11On12)
+    {
+      AddRef();
+      *ppvObject = (ID3D11On12Device *)&m_WrappedD3D11On12;
+      return S_OK;
+    }
+    else
+    {
+      return E_NOINTERFACE;
     }
   }
   else if(riid == IRenderDoc_uuid)
@@ -2600,6 +2663,10 @@ void WrappedID3D11Device::StartFrameCapture(void *dev, void *wnd)
   if(m_State != WRITING_IDLE)
     return;
 
+  // if SDKVersion is 0, that means this is a 11On12 device and we can't
+  // capture directly
+  RDCASSERT(m_InitParams.SDKVersion != 0);
+
   SCOPED_LOCK(m_D3DLock);
 
   RenderDoc::Inst().SetCurrentDriver(RDC_D3D11);
@@ -3601,3 +3668,252 @@ const FetchDrawcall *WrappedID3D11Device::GetDrawcall(uint32_t eventID)
 
   return m_Drawcalls[eventID];
 }
+
+#if RENDERDOC_D3D11_ON_12_INTEROP
+
+class WrappedID3D12Device;
+
+IUnknown *UnwrapD3D12Resource(IUnknown *in);
+void CreateD3D11On12Resource(WrappedID3D12Device *D3D12, IUnknown *pResource12, UINT InState,
+                             UINT OutState, ID3D11Resource *wrappedRes);
+void AcquireD3D11On12Resources(WrappedID3D12Device *D3D12, ID3D11Resource *const *ppResources,
+                               UINT NumResources);
+void ReleaseD3D11On12Resources(WrappedID3D12Device *D3D12, ID3D11Resource *const *ppResources,
+                               UINT NumResources);
+
+void WrappedID3D11Device::Set11On12(WrappedID3D12Device *wrapped12)
+{
+  m_D3D12 = wrapped12;
+
+  m_pDevice1 = NULL;
+  m_pDevice->QueryInterface(__uuidof(ID3D11On12Device), (void **)&m_D3D11On12);
+}
+
+HRESULT STDMETHODCALLTYPE WrappedID3D11Device::CreateWrappedResource(
+    _In_ IUnknown *pResource12, _In_ const D3D11_RESOURCE_FLAGS *pFlags11,
+    UINT InState,     // D3D12_RESOURCE_STATES
+    UINT OutState,    // D3D12_RESOURCE_STATES
+    REFIID riid, _COM_Outptr_opt_ void **ppResource11)
+{
+  IUnknown *unwrappedRes12 = UnwrapD3D12Resource(pResource12);
+
+  // validation, returns S_FALSE for valid params, or an error code
+  if(ppResource11 == NULL)
+    return m_D3D11On12->CreateWrappedResource(unwrappedRes12, pFlags11, InState, OutState, riid,
+                                              NULL);
+
+  void *real = NULL;
+  HRESULT ret =
+      m_D3D11On12->CreateWrappedResource(unwrappedRes12, pFlags11, InState, OutState, riid, &real);
+
+  if(SUCCEEDED(ret))
+  {
+    SCOPED_LOCK(m_D3DLock);
+
+    ID3D11Buffer *realBuf = NULL;
+    ID3D11Texture1D *realTex1D = NULL;
+    ID3D11Texture2D *realTex2D = NULL;
+    ID3D11Texture3D *realTex3D = NULL;
+
+    if(riid == __uuidof(ID3D11Buffer))
+    {
+      realBuf = (ID3D11Buffer *)real;
+    }
+    else if(riid == __uuidof(ID3D11Texture1D))
+    {
+      realTex1D = (ID3D11Texture1D *)real;
+    }
+    else if(riid == __uuidof(ID3D11Texture2D))
+    {
+      realTex2D = (ID3D11Texture2D *)real;
+    }
+    else if(riid == __uuidof(ID3D11Texture3D))
+    {
+      realTex3D = (ID3D11Texture3D *)real;
+    }
+    else if(riid == __uuidof(ID3D11Resource))
+    {
+      ID3D11Resource *res = (ID3D11Resource *)real;
+
+      // determine the type of resource. Only one should succeed
+      m_pDevice->QueryInterface(__uuidof(ID3D11Buffer), (void **)&realBuf);
+      m_pDevice->QueryInterface(__uuidof(ID3D11Texture1D), (void **)&realTex1D);
+      m_pDevice->QueryInterface(__uuidof(ID3D11Texture2D), (void **)&realTex2D);
+      m_pDevice->QueryInterface(__uuidof(ID3D11Texture3D), (void **)&realTex3D);
+
+      // release the extra refcount
+      SAFE_RELEASE(res);
+    }
+    else
+    {
+      RDCERR("Unknown UUID in CreateWrappedResource: %s", ToStr::Get(riid).c_str());
+      IUnknown *unk = (IUnknown *)real;
+      unk->Release();
+      return E_NOINTERFACE;
+    }
+
+    ID3D11Resource *wrappedRes = NULL;
+
+    if(realBuf)
+    {
+      D3D11_BUFFER_DESC desc;
+      realBuf->GetDesc(&desc);
+
+      wrappedRes = new WrappedID3D11Buffer(realBuf, desc.ByteWidth, this);
+
+      // don't really need this, but other functions expect the buffer to have data pre-allocated.
+      // the record and its chunks will be deleted as normal when the resource is released
+      D3D11ResourceRecord *record =
+          GetResourceManager()->AddResourceRecord(GetIDForResource(wrappedRes));
+
+      Chunk *chunk = NULL;
+      {
+        SCOPED_SERIALISE_CONTEXT(9999);
+
+        size_t sz = desc.ByteWidth;
+        byte *dummy = new byte[sz];
+        m_pSerialiser->SerialiseBuffer("", dummy, sz);
+
+        record->SetDataOffset(m_pSerialiser->GetOffset() - desc.ByteWidth);
+
+        chunk = scope.Get();
+      }
+
+      record->AddChunk(chunk);
+      record->SetDataPtr(chunk->GetData());
+      record->DataInSerialiser = true;
+      record->Length = desc.ByteWidth;
+    }
+    else
+    {
+      UINT w = 1, h = 1, d = 1, mips = 0, arr = 1;
+      DXGI_FORMAT fmt = DXGI_FORMAT_R8_UNORM;
+
+      if(realTex1D)
+      {
+        wrappedRes = new WrappedID3D11Texture1D(realTex1D, this);
+
+        D3D11_TEXTURE1D_DESC desc;
+        realTex1D->GetDesc(&desc);
+
+        w = desc.Width;
+        arr = RDCMAX(desc.ArraySize, arr);
+        mips = desc.MipLevels;
+      }
+      else if(realTex2D)
+      {
+        wrappedRes = new WrappedID3D11Texture2D1(realTex2D, this);
+
+        D3D11_TEXTURE2D_DESC desc;
+        realTex2D->GetDesc(&desc);
+
+        w = desc.Width;
+        h = desc.Height;
+        arr = RDCMAX(desc.ArraySize, arr);
+        mips = desc.MipLevels;
+      }
+      else if(realTex3D)
+      {
+        wrappedRes = new WrappedID3D11Texture3D1(realTex3D, this);
+
+        D3D11_TEXTURE3D_DESC desc;
+        realTex3D->GetDesc(&desc);
+
+        w = desc.Width;
+        h = desc.Height;
+        d = desc.Depth;
+        mips = desc.MipLevels;
+      }
+
+      UINT numSubresources = 0;
+
+      if(mips == 0)
+        numSubresources = CalcNumMips(w, h, d);
+
+      numSubresources *= arr;
+
+      // create a record with the requisite number of subresource records. All empty
+      D3D11ResourceRecord *record =
+          GetResourceManager()->AddResourceRecord(GetIDForResource(wrappedRes));
+      RDCASSERT(record);
+
+      record->SetDataPtr(NULL);
+      record->Length = 1;
+      record->DataInSerialiser = false;
+      record->NumSubResources = numSubresources;
+      record->SubResources = new ResourceRecord *[record->NumSubResources];
+
+      for(UINT i = 0; i < numSubresources; i++)
+      {
+        record->SubResources[i] = new D3D11ResourceRecord(ResourceId());
+        record->SubResources[i]->DataInSerialiser = false;
+
+        record->SubResources[i]->Length = GetByteSize(w, h, d, fmt, i % mips);
+      }
+    }
+
+    CreateD3D11On12Resource(m_D3D12, pResource12, InState, OutState, wrappedRes);
+
+    if(riid == __uuidof(ID3D11Buffer))
+    {
+      *ppResource11 = (ID3D11Buffer *)wrappedRes;
+    }
+    else if(riid == __uuidof(ID3D11Texture1D))
+    {
+      *ppResource11 = (ID3D11Texture1D *)wrappedRes;
+    }
+    else if(riid == __uuidof(ID3D11Texture2D))
+    {
+      *ppResource11 = (ID3D11Texture2D *)wrappedRes;
+    }
+    else if(riid == __uuidof(ID3D11Texture3D))
+    {
+      *ppResource11 = (ID3D11Texture3D *)wrappedRes;
+    }
+    else if(riid == __uuidof(ID3D11Resource))
+    {
+      *ppResource11 = wrappedRes;
+    }
+  }
+
+  return ret;
+}
+
+void STDMETHODCALLTYPE WrappedID3D11Device::ReleaseWrappedResources(
+    _In_reads_(NumResources) ID3D11Resource *const *ppResources, UINT NumResources)
+{
+  ReleaseD3D11On12Resources(m_D3D12, ppResources, NumResources);
+}
+
+void STDMETHODCALLTYPE WrappedID3D11Device::AcquireWrappedResources(
+    _In_reads_(NumResources) ID3D11Resource *const *ppResources, UINT NumResources)
+{
+  AcquireD3D11On12Resources(m_D3D12, ppResources, NumResources);
+}
+
+#else
+
+void WrappedID3D11Device::Set11On12(WrappedID3D12Device *wrapped12)
+{
+}
+
+HRESULT STDMETHODCALLTYPE WrappedID3D11Device::CreateWrappedResource(
+    _In_ IUnknown *pResource12, _In_ const D3D11_RESOURCE_FLAGS *pFlags11,
+    UINT InState,     // D3D12_RESOURCE_STATES
+    UINT OutState,    // D3D12_RESOURCE_STATES
+    REFIID riid, _COM_Outptr_opt_ void **ppResource11)
+{
+  return E_NOTIMPL;
+}
+
+void STDMETHODCALLTYPE WrappedID3D11Device::ReleaseWrappedResources(
+    _In_reads_(NumResources) ID3D11Resource *const *ppResources, UINT NumResources)
+{
+}
+
+void STDMETHODCALLTYPE WrappedID3D11Device::AcquireWrappedResources(
+    _In_reads_(NumResources) ID3D11Resource *const *ppResources, UINT NumResources)
+{
+}
+
+#endif

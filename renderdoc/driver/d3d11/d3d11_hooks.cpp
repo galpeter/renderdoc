@@ -28,6 +28,25 @@
 #include "driver/dxgi/dxgi_wrapped.h"
 #include "hooks/hooks.h"
 
+#if RENDERDOC_D3D11_ON_12_INTEROP
+
+class WrappedID3D12Device;
+
+void UnwrapD3D12Device(IUnknown *in, WrappedID3D12Device **out, IUnknown **unwrapped);
+void UnwrapD3D12Queue(IUnknown *in, IUnknown **unwrapped);
+
+typedef HRESULT(WINAPI *PFN_D3D11ON12_CREATE_DEVICE)(
+    _In_ IUnknown *, UINT, _In_reads_opt_(FeatureLevels) CONST D3D_FEATURE_LEVEL *,
+    UINT FeatureLevels, _In_reads_opt_(NumQueues) IUnknown *CONST *, UINT NumQueues, UINT,
+    _COM_Outptr_opt_ ID3D11Device **, _COM_Outptr_opt_ ID3D11DeviceContext **,
+    _Out_opt_ D3D_FEATURE_LEVEL *);
+
+#else
+
+typedef HRESULT(WINAPI *PFN_D3D11ON12_CREATE_DEVICE)();
+
+#endif
+
 #define DLL_NAME "d3d11.dll"
 
 ID3DDevice *GetD3D11DeviceIfAlloc(IUnknown *dev)
@@ -65,6 +84,11 @@ public:
     success &= CreateDevice.Initialize("D3D11CreateDevice", DLL_NAME, D3D11CreateDevice_hook);
     success &= CreateDeviceAndSwapChain.Initialize("D3D11CreateDeviceAndSwapChain", DLL_NAME,
                                                    D3D11CreateDeviceAndSwapChain_hook);
+
+#if RENDERDOC_D3D11_ON_12_INTEROP
+    success &= CreateDevice11On12.Initialize("D3D11On12CreateDevice", "d3d11.dll",
+                                             D3D11On12CreateDevice_hook);
+#endif
 
 // these are not required for success, but opportunistic to prevent AMD extensions from
 // activating and causing later crashes when not replayed correctly
@@ -106,6 +130,8 @@ private:
 
   Hook<PFN_D3D11_CREATE_DEVICE_AND_SWAP_CHAIN> CreateDeviceAndSwapChain;
   Hook<PFN_D3D11_CREATE_DEVICE> CreateDevice;
+
+  Hook<PFN_D3D11ON12_CREATE_DEVICE> CreateDevice11On12;
 
   // optional extension hooks
   Hook<PFNAmdDxExtCreate11> AmdCreate11;
@@ -312,6 +338,109 @@ private:
 
     return E_FAIL;
   }
+
+#if RENDERDOC_D3D11_ON_12_INTEROP
+  static HRESULT WINAPI D3D11On12CreateDevice_hook(
+      IUnknown *pDevice, UINT Flags, CONST D3D_FEATURE_LEVEL *pFeatureLevels, UINT FeatureLevels,
+      IUnknown *CONST *ppCommandQueues, UINT NumQueues, UINT NodeMask, ID3D11Device **ppDevice,
+      ID3D11DeviceContext **ppImmediateContext, D3D_FEATURE_LEVEL *pChosenFeatureLevel)
+  {
+    WrappedID3D12Device *wrappedD3D12 = NULL;
+    IUnknown *unwrappedDevice = NULL;
+    UnwrapD3D12Device(pDevice, &wrappedD3D12, &unwrappedDevice);
+
+    if(unwrappedDevice == NULL)
+    {
+      RDCERR("Unexpected wrapped D3D12 device passed to D3D11On12CreateDevice!");
+      return d3d11hooks.CreateDevice11On12()(pDevice, Flags, pFeatureLevels, FeatureLevels,
+                                             ppCommandQueues, NumQueues, NodeMask, ppDevice,
+                                             ppImmediateContext, pChosenFeatureLevel);
+    }
+
+    IUnknown **unwrappedQueues = new IUnknown *[NumQueues];
+
+    for(UINT i = 0; i < NumQueues; i++)
+    {
+      UnwrapD3D12Queue(ppCommandQueues[i], &unwrappedQueues[i]);
+      if(unwrappedQueues[i] == NULL)
+      {
+        RDCERR("Got wrapped D3D12 device in D3D11On12CreateDevice but non-wrapped queue!");
+        // no way to win here, just bail.
+        SAFE_DELETE_ARRAY(unwrappedQueues);
+        return E_NOTIMPL;
+      }
+    }
+
+    RDCDEBUG("Call to D3D11On12CreateDevice Flags %x", Flags);
+
+    bool reading = RenderDoc::Inst().IsReplayApp();
+
+    if(reading)
+    {
+      RDCDEBUG("In replay app");
+    }
+
+    if(d3d11hooks.m_EnabledHooks)
+    {
+      if(!reading && RenderDoc::Inst().GetCaptureOptions().APIValidation)
+      {
+        Flags |= D3D11_CREATE_DEVICE_DEBUG;
+      }
+      else
+      {
+        Flags &= ~D3D11_CREATE_DEVICE_DEBUG;
+      }
+    }
+    Flags |= D3D11_CREATE_DEVICE_DEBUG;
+
+    RDCDEBUG("Calling real CreateDevice11On12...");
+
+    HRESULT ret = d3d11hooks.CreateDevice11On12()(
+        unwrappedDevice, Flags, pFeatureLevels, FeatureLevels, unwrappedQueues, NumQueues, NodeMask,
+        ppDevice, ppImmediateContext, pChosenFeatureLevel);
+
+    SAFE_DELETE_ARRAY(unwrappedQueues);
+
+    RDCDEBUG("Called real CreateDevice11On12...");
+
+    bool suppress = false;
+
+    suppress = (Flags & D3D11_CREATE_DEVICE_PREVENT_ALTERING_LAYER_SETTINGS_FROM_REGISTRY) != 0;
+
+    if(suppress && !reading)
+    {
+      RDCDEBUG("Application requested not to be hooked.");
+    }
+    else if(SUCCEEDED(ret) && d3d11hooks.m_EnabledHooks && ppDevice)
+    {
+      RDCDEBUG("succeeded and hooking.");
+
+      if(!WrappedID3D11Device::IsAlloc(*ppDevice))
+      {
+        // can't capture from this device as we don't want to also record D3D12 creation etc.
+        // Passing NULL as init params signals to the D3D11 device that it's only 11On12
+        WrappedID3D11Device *wrap = new WrappedID3D11Device(*ppDevice, NULL);
+
+        wrap->Set11On12(wrappedD3D12);
+
+        RDCDEBUG("created wrapped device.");
+
+        *ppDevice = wrap;
+        wrap->GetImmediateContext(ppImmediateContext);
+      }
+    }
+    else if(SUCCEEDED(ret))
+    {
+      RDCLOG("Created wrapped D3D11 device.");
+    }
+    else
+    {
+      RDCDEBUG("failed. 0x%08x", ret);
+    }
+
+    return ret;
+  }
+#endif
 };
 
 D3D11Hook D3D11Hook::d3d11hooks;

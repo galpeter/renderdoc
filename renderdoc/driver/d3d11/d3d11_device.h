@@ -74,6 +74,63 @@ struct D3D11InitParams : public RDCInitParams
 
 class WrappedID3D11Device;
 class WrappedShader;
+class WrappedID3D12Device;
+
+struct D3D11_RESOURCE_FLAGS
+{
+  UINT BindFlags;
+  UINT MiscFlags;
+  UINT CPUAccessFlags;
+  UINT StructureByteStride;
+};
+
+MIDL_INTERFACE("85611e73-70a9-490e-9614-a9e302777904")
+ID3D11On12Device : public IUnknown
+{
+public:
+  virtual HRESULT STDMETHODCALLTYPE CreateWrappedResource(
+      _In_ IUnknown * pResource12, _In_ const D3D11_RESOURCE_FLAGS *pFlags11,
+      UINT InState,     // D3D12_RESOURCE_STATES
+      UINT OutState,    // D3D12_RESOURCE_STATES
+      REFIID riid, _COM_Outptr_opt_ void **ppResource11) = 0;
+
+  virtual void STDMETHODCALLTYPE ReleaseWrappedResources(
+      _In_reads_(NumResources) ID3D11Resource * const *ppResources, UINT NumResources) = 0;
+
+  virtual void STDMETHODCALLTYPE AcquireWrappedResources(
+      _In_reads_(NumResources) ID3D11Resource * const *ppResources, UINT NumResources) = 0;
+};
+
+struct WrappedID3D11On12Device : public ID3D11On12Device
+{
+  WrappedID3D11Device *m_pDevice;
+
+  WrappedID3D11On12Device() : m_pDevice(NULL) {}
+  //////////////////////////////
+  // implement IUnknown
+
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject);
+  ULONG STDMETHODCALLTYPE AddRef();
+  ULONG STDMETHODCALLTYPE Release();
+
+  //////////////////////////////
+  // implement ID3D11On12Device
+
+  virtual HRESULT STDMETHODCALLTYPE CreateWrappedResource(_In_ IUnknown *pResource12,
+                                                          _In_ const D3D11_RESOURCE_FLAGS *pFlags11,
+                                                          UINT InState,     // D3D12_RESOURCE_STATES
+                                                          UINT OutState,    // D3D12_RESOURCE_STATES
+                                                          REFIID riid,
+                                                          _COM_Outptr_opt_ void **ppResource11);
+
+  virtual void STDMETHODCALLTYPE ReleaseWrappedResources(_In_reads_(NumResources)
+                                                             ID3D11Resource *const *ppResources,
+                                                         UINT NumResources);
+
+  virtual void STDMETHODCALLTYPE AcquireWrappedResources(_In_reads_(NumResources)
+                                                             ID3D11Resource *const *ppResources,
+                                                         UINT NumResources);
+};
 
 // We can pass through all calls to ID3D11Debug without intercepting, this
 // struct isonly here so that we can intercept QueryInterface calls to return
@@ -298,6 +355,10 @@ private:
 
   D3D11InitParams m_InitParams;
 
+  WrappedID3D12Device *m_D3D12;
+  WrappedID3D11On12Device m_WrappedD3D11On12;
+  ID3D11On12Device *m_D3D11On12;
+
   ID3D11Device *m_pDevice;
   ID3D11Device1 *m_pDevice1;
   ID3D11Device2 *m_pDevice2;
@@ -438,6 +499,27 @@ public:
 
     return NULL;
   }
+
+  ////////////////////////////////////////////////////////////////
+  // D3D11On12 interface. Might be no-ops if it's #defined'd out
+
+  void Set11On12(WrappedID3D12Device *wrapped12);
+
+  virtual HRESULT STDMETHODCALLTYPE CreateWrappedResource(_In_ IUnknown *pResource12,
+                                                          _In_ const D3D11_RESOURCE_FLAGS *pFlags11,
+                                                          UINT InState,     // D3D12_RESOURCE_STATES
+                                                          UINT OutState,    // D3D12_RESOURCE_STATES
+                                                          REFIID riid,
+                                                          _COM_Outptr_opt_ void **ppResource11);
+
+  virtual void STDMETHODCALLTYPE ReleaseWrappedResources(_In_reads_(NumResources)
+                                                             ID3D11Resource *const *ppResources,
+                                                         UINT NumResources);
+
+  virtual void STDMETHODCALLTYPE AcquireWrappedResources(_In_reads_(NumResources)
+                                                             ID3D11Resource *const *ppResources,
+                                                         UINT NumResources);
+
   ////////////////////////////////////////////////////////////////
   // log replaying
 
