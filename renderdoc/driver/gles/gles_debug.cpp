@@ -358,7 +358,7 @@ void GLESReplay::InitDebugData()
   gl.glGenTextures(1, &DebugData.pickPixelTex);
   gl.glBindTexture(eGL_TEXTURE_2D, DebugData.pickPixelTex);
 
-  gl.glTexStorage2D(eGL_TEXTURE_2D, 1, eGL_RGBA32F, 1, 1);
+  gl.glTextureStorage2DEXT(DebugData.pickPixelTex, eGL_TEXTURE_2D, 1, eGL_RGBA32F, 1, 1);
   gl.glTexParameteri(eGL_TEXTURE_2D, eGL_TEXTURE_MIN_FILTER, eGL_NEAREST);
   gl.glTexParameteri(eGL_TEXTURE_2D, eGL_TEXTURE_MAG_FILTER, eGL_NEAREST);
   gl.glTexParameteri(eGL_TEXTURE_2D, eGL_TEXTURE_WRAP_S, eGL_CLAMP_TO_EDGE);
@@ -1116,8 +1116,8 @@ ResourceId GLESReplay::RenderOverlay(ResourceId texid, FormatComponentType typeH
     DebugData.overlayTexHeight = texDetails.height;
 
     gl.glBindTexture(eGL_TEXTURE_2D, DebugData.overlayTex);
-    gl.glTexStorage2D(eGL_TEXTURE_2D, 1, eGL_RGBA8, texDetails.width,
-                      texDetails.height);
+    gl.glTextureStorage2DEXT(DebugData.overlayTex, eGL_TEXTURE_2D, 1, eGL_RGBA8, texDetails.width,
+                             texDetails.height);
     gl.glTexParameteri(eGL_TEXTURE_2D, eGL_TEXTURE_MIN_FILTER, eGL_NEAREST);
     gl.glTexParameteri(eGL_TEXTURE_2D, eGL_TEXTURE_MAG_FILTER, eGL_NEAREST);
     gl.glTexParameteri(eGL_TEXTURE_2D, eGL_TEXTURE_WRAP_S, eGL_CLAMP_TO_EDGE);
@@ -1259,7 +1259,7 @@ ResourceId GLESReplay::RenderOverlay(ResourceId texid, FormatComponentType typeH
 
       gl.glGenTextures(1, &depthCopy);
       gl.glBindTexture(eGL_TEXTURE_2D, depthCopy);
-      gl.glTexStorage2D(eGL_TEXTURE_2D, 1, fmt, DebugData.overlayTexWidth,
+      gl.glTextureStorage2DEXT(depthCopy, eGL_TEXTURE_2D, 1, fmt, DebugData.overlayTexWidth,
                                DebugData.overlayTexHeight);
       gl.glTexParameteri(eGL_TEXTURE_2D, eGL_TEXTURE_MIN_FILTER, eGL_NEAREST);
       gl.glTexParameteri(eGL_TEXTURE_2D, eGL_TEXTURE_MAG_FILTER, eGL_NEAREST);
@@ -1281,7 +1281,8 @@ ResourceId GLESReplay::RenderOverlay(ResourceId texid, FormatComponentType typeH
 
       gl.glGenTextures(1, &stencilCopy);
       gl.glBindTexture(eGL_TEXTURE_2D, stencilCopy);
-      gl.glTexStorage2D(eGL_TEXTURE_2D, 1, fmt, DebugData.overlayTexWidth, DebugData.overlayTexHeight);
+      gl.glTextureStorage2DEXT(stencilCopy, eGL_TEXTURE_2D, 1, fmt, DebugData.overlayTexWidth,
+                               DebugData.overlayTexHeight);
       gl.glTexParameteri(eGL_TEXTURE_2D, eGL_TEXTURE_MIN_FILTER, eGL_NEAREST);
       gl.glTexParameteri(eGL_TEXTURE_2D, eGL_TEXTURE_MAG_FILTER, eGL_NEAREST);
       gl.glTexParameteri(eGL_TEXTURE_2D, eGL_TEXTURE_WRAP_S, eGL_CLAMP_TO_EDGE);
