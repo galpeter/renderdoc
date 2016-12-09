@@ -918,6 +918,20 @@ public:
   void Common_glTextureStorage3DMultisampleEXT(ResourceId id, GLenum target, GLsizei samples,
                                                GLenum internalformat, GLsizei width, GLsizei height,
                                                GLsizei depth, GLboolean fixedsamplelocations);
+  bool Serialise_glTextureStorage2DMultisampleEXT(GLuint texture, GLenum target, GLsizei samples,
+                                                  GLenum internalformat, GLsizei width,
+                                                  GLsizei height, GLboolean fixedsamplelocations);
+  bool Serialise_glTextureStorage3DMultisampleEXT(GLuint texture, GLenum target, GLsizei samples,
+                                                  GLenum internalformat, GLsizei width,
+                                                  GLsizei height, GLsizei depth,
+                                                  GLboolean fixedsamplelocations);
+  void glTextureStorage2DMultisampleEXT(GLuint texture, GLenum target, GLsizei samples,
+                                        GLenum internalformat, GLsizei width, GLsizei height,
+                                        GLboolean fixedsamplelocations);
+  void glTextureStorage3DMultisampleEXT(GLuint texture, GLenum target, GLsizei samples,
+                                        GLenum internalformat, GLsizei width, GLsizei height,
+                                        GLsizei depth, GLboolean fixedsamplelocations);
+
 
   void Common_glTextureSubImage1DEXT(GLResourceRecord *record, GLenum target, GLint level,
                                      GLint xoffset, GLsizei width, GLenum format, GLenum type,

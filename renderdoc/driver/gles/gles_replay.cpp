@@ -2665,7 +2665,8 @@ void GLESReplay::CreateCustomShaderTex(uint32_t w, uint32_t h)
 
   m_pDriver->glGenTextures(1, &DebugData.customTex);
   m_pDriver->glBindTexture(eGL_TEXTURE_2D, DebugData.customTex);
-  m_pDriver->glTexStorage2D(eGL_TEXTURE_2D, mips, eGL_RGBA16F, (GLsizei)w, (GLsizei)h);
+  m_pDriver->glTextureStorage2DEXT(DebugData.customTex, eGL_TEXTURE_2D, mips, eGL_RGBA16F,
+                                   (GLsizei)w, (GLsizei)h);
   m_pDriver->glTexParameteri(eGL_TEXTURE_2D, eGL_TEXTURE_MIN_FILTER, eGL_NEAREST);
   m_pDriver->glTexParameteri(eGL_TEXTURE_2D, eGL_TEXTURE_MAG_FILTER, eGL_NEAREST);
   m_pDriver->glTexParameteri(eGL_TEXTURE_2D, eGL_TEXTURE_BASE_LEVEL, 0);
@@ -2797,7 +2798,7 @@ ResourceId GLESReplay::CreateProxyTexture(const FetchTexture &templateTex)
     {
       binding = eGL_TEXTURE_2D_MULTISAMPLE;
       gl.glBindTexture(eGL_TEXTURE_2D_MULTISAMPLE, tex);
-      gl.glTexStorage2DMultisample(eGL_TEXTURE_2D_MULTISAMPLE, templateTex.msSamp,
+      gl.glTextureStorage2DMultisampleEXT(tex, eGL_TEXTURE_2D_MULTISAMPLE, templateTex.msSamp,
                                           intFormat, templateTex.width, templateTex.height, GL_TRUE);
       break;
     }
@@ -2805,7 +2806,7 @@ ResourceId GLESReplay::CreateProxyTexture(const FetchTexture &templateTex)
     {
       binding = eGL_TEXTURE_2D_MULTISAMPLE_ARRAY;
       gl.glBindTexture(eGL_TEXTURE_2D_MULTISAMPLE_ARRAY, tex);
-      gl.glTexStorage3DMultisample(eGL_TEXTURE_2D_MULTISAMPLE_ARRAY, templateTex.msSamp,
+      gl.glTextureStorage3DMultisampleEXT(tex, eGL_TEXTURE_2D_MULTISAMPLE_ARRAY, templateTex.msSamp,
                                           intFormat, templateTex.width, templateTex.height,
                                           templateTex.arraysize, GL_TRUE);
       break;

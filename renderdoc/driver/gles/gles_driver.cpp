@@ -482,9 +482,7 @@ void WrappedGLES::Initialise(GLESInitParams &params)
 
   if(params.multiSamples > 1)
   {
-    // TODO pantos
-//    gl.glTextureStorage2DMultisampleEXT(m_FakeBB_Color, target, params.multiSamples, colfmt,
-    gl.glTexStorage2DMultisample(target, params.multiSamples, colfmt,
+    gl.glTextureStorage2DMultisampleEXT(m_FakeBB_Color, target, params.multiSamples, colfmt,
                                         params.width, params.height, true);
   }
   else
@@ -540,9 +538,7 @@ void WrappedGLES::Initialise(GLESInitParams &params)
       gl.glObjectLabel(eGL_TEXTURE, m_FakeBB_DepthStencil, -1, "Backbuffer Depth");
 
     if(params.multiSamples > 1)
-      // TODO pantos
-//      gl.glTextureStorage2DMultisampleEXT(m_FakeBB_DepthStencil, target, params.multiSamples,
-      gl.glTexStorage2DMultisample(target, params.multiSamples,
+      gl.glTextureStorage2DMultisampleEXT(m_FakeBB_DepthStencil, target, params.multiSamples,
                                           depthfmt, params.width, params.height, true);
     else
       gl.glTextureStorage2DEXT(m_FakeBB_DepthStencil, target, 1, depthfmt, params.width,
@@ -2618,10 +2614,10 @@ void WrappedGLES::ProcessChunk(uint64_t offset, GLChunkType context)
     case TEXSTORAGE2D: Serialise_glTextureStorage2DEXT(0, eGL_NONE, 0, eGL_NONE, 0, 0); break;
     case TEXSTORAGE3D: Serialise_glTextureStorage3DEXT(0, eGL_NONE, 0, eGL_NONE, 0, 0, 0); break;
     case TEXSTORAGE2DMS:
-      Serialise_glTexStorage2DMultisample(eGL_NONE, 0, eGL_NONE, 0, 0, GL_FALSE);
+      Serialise_glTextureStorage2DMultisampleEXT(0, eGL_NONE, 0, eGL_NONE, 0, 0, GL_FALSE);
       break;
     case TEXSTORAGE3DMS:
-      Serialise_glTexStorage3DMultisample(eGL_NONE, 0, eGL_NONE, 0, 0, 0, GL_FALSE);
+      Serialise_glTextureStorage3DMultisampleEXT(0, eGL_NONE, 0, eGL_NONE, 0, 0, 0, GL_FALSE);
       break;
     case TEXIMAGE2D:
       Serialise_glTexImage2D(eGL_NONE, 0, 0, 0, 0, 0, eGL_NONE, eGL_NONE, NULL);

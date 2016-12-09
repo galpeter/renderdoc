@@ -55,7 +55,6 @@ GLint CubeTargetIndex(GLenum face);
 GLenum TextureBinding(GLenum target);
 GLenum TextureTarget(GLenum target);
 int TextureTargetIndex(GLenum target);
-bool IsProxyTarget(GLenum target);
 
 GLenum BufferBinding(GLenum target);
 GLenum FramebufferBinding(GLenum target);
