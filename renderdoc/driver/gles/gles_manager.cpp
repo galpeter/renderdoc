@@ -664,12 +664,12 @@ void GLResourceManager::PrepareTextureInitialContents(ResourceId liveid, Resourc
       }
       else if(details.dimension == 2)
       {
-        gl.glTextureStorage2DEXT(tex, details.curType, mips, details.internalFormat, details.width,
+        gl.glTexStorage2D(details.curType, mips, details.internalFormat, details.width,
                                  details.height);
       }
       else if(details.dimension == 3)
       {
-        gl.glTextureStorage3DEXT(tex, details.curType, mips, details.internalFormat, details.width,
+        gl.glTexStorage3D(details.curType, mips, details.internalFormat, details.width,
                                  details.height, details.depth);
       }
 
@@ -1100,11 +1100,17 @@ bool GLResourceManager::Serialise_InitialState(ResourceId resid, GLResource res)
         }
         else if(dim == 2)
         {
-          gl.glTextureStorage2DEXT(tex, textype, mips, internalformat, width, height);
+          gl.glGetIntegerv(TextureBinding(textype), (GLint*)&oldBinding);
+          gl.glBindTexture(textype, tex);
+          gl.glTexStorage2D(textype, mips, internalformat, width, height);
+          gl.glBindTexture(textype, oldBinding);
         }
         else if(dim == 3)
         {
-          gl.glTextureStorage3DEXT(tex, textype, mips, internalformat, width, height, depth);
+          gl.glGetIntegerv(TextureBinding(textype), (GLint*)&oldBinding);
+          gl.glBindTexture(textype, tex);
+          gl.glTexStorage3D(textype, mips, internalformat, width, height, depth);
+          gl.glBindTexture(textype, oldBinding);
         }
 
         if(textype == eGL_TEXTURE_BUFFER || details.view)
