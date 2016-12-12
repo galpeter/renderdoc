@@ -665,22 +665,6 @@ ResourceFormat MakeResourceFormat(WrappedGLES &gl, GLenum target, GLenum fmt)
       return ret;
     }
 
-    if (fmt == eGL_DEPTH32F_STENCIL8) {
-      ret.compByteWidth = 1;
-      ret.compCount = 4;
-      ret.compType = eCompType_Depth;
-      ret.specialFormat = eSpecial_D32S8;
-      ret.special = true;
-      return ret;
-    }
-
-    if (fmt == eGL_DEPTH_COMPONENT24) {
-      ret.compByteWidth = 3;
-      ret.compCount = 1;
-      ret.compType = eCompType_Depth;
-      return ret;
-    }
-
     if (fmt == eGL_RGB8) {
       ret.compByteWidth = 1;
       ret.compCount = 3;
@@ -691,6 +675,13 @@ ResourceFormat MakeResourceFormat(WrappedGLES &gl, GLenum target, GLenum fmt)
     if (fmt == eGL_RG8) {
       ret.compByteWidth = 1;
       ret.compCount = 2;
+      ret.compType = eCompType_UNorm;
+      return ret;
+    }
+
+    if (fmt == eGL_R8) {
+      ret.compByteWidth = 1;
+      ret.compCount = 1;
       ret.compType = eCompType_UNorm;
       return ret;
     }
@@ -707,15 +698,6 @@ ResourceFormat MakeResourceFormat(WrappedGLES &gl, GLenum target, GLenum fmt)
       ret.compCount = 3;
       ret.compType = eCompType_UInt;
       ret.srgbCorrected = true;
-      return ret;
-    }
-
-    if (fmt == eGL_DEPTH24_STENCIL8) {
-      ret.compByteWidth = 1;
-      ret.compCount = 4;
-      ret.compType = eCompType_Depth;
-      ret.specialFormat = eSpecial_D24S8;
-      ret.special = true;
       return ret;
     }
 
@@ -764,6 +746,43 @@ ResourceFormat MakeResourceFormat(WrappedGLES &gl, GLenum target, GLenum fmt)
       ret.compByteWidth = 4;
       ret.compCount = 1;
       ret.compType = eCompType_Float;
+      return ret;
+    }
+
+    if(IsDepthStencilFormat(fmt))
+    {
+      // depth format
+      ret.compType = eCompType_Depth;
+
+      switch(fmt)
+      {
+        case eGL_DEPTH_COMPONENT16:
+          ret.compByteWidth = 2;
+          ret.compCount = 1;
+          break;
+        case eGL_DEPTH_COMPONENT24:
+          ret.compByteWidth = 3;
+          ret.compCount = 1;
+          break;
+        case eGL_DEPTH_COMPONENT32F:
+          ret.compByteWidth = 4;
+          ret.compCount = 1;
+          break;
+        case eGL_DEPTH24_STENCIL8:
+          ret.specialFormat = eSpecial_D24S8;
+          ret.special = true;
+          break;
+        case eGL_DEPTH32F_STENCIL8:
+          ret.specialFormat = eSpecial_D32S8;
+          ret.special = true;
+          break;
+        case eGL_STENCIL_INDEX8:
+          ret.specialFormat = eSpecial_S8;
+          ret.special = true;
+          break;
+        default: RDCERR("Unexpected depth or stencil format %#x", fmt);
+      }
+
       return ret;
     }
   }
