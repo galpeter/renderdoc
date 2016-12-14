@@ -686,6 +686,8 @@ private:
   void clearLocalDataBuffers();
 
   void writeFakeVertexAttribPointer(GLsizei count);
+  void writeFakeVertexAttribPointerForDrawElements(GLsizei count, GLenum type, const void *indices);
+  GLsizei getVertexCountFromIndices(GLsizei count, GLenum type, const void *indices);
 
   template<typename TP, typename TF>
   bool Serialise_Common_glTexParameter_v(GLenum target, GLenum pname, const TP *params, TF GLHookSet::*function);
