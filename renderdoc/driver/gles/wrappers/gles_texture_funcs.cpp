@@ -1318,15 +1318,6 @@ bool WrappedGLES::Serialise_glCompressedTexImage2D(GLenum target,
       m_Textures[liveId].internalFormat = fmt;
     }
 
-    if (DataProvided)
-    {
-      RDCASSERT(GetCompressedByteSize(Width, Height, 1, fmt, Level) == byteSize);
-      auto& cd = m_Textures[liveId].compressedData;
-      auto& cdData = cd[Target][Level];
-      cdData.resize(byteSize);
-      memcpy(cdData.data(), databuf, byteSize);
-    }
-
     // for creation type chunks we forcibly don't use the unpack buffers as we
     // didn't track and set them up, so unbind it and either we provide data (in buf)
     // or just size the texture to be filled with data later (buf=NULL)
@@ -1372,6 +1363,80 @@ bool WrappedGLES::Serialise_glCompressedTexImage2D(GLenum target,
   return true;
 }
 
+void WrappedGLES::storeCompressedTexData(GLint unpackbuf, ResourceId texId,
+                                         GLenum target, GLint level, GLint xoffset,
+                                         GLint yoffset, GLint zoffset, GLsizei width,
+                                         GLsizei height, GLsizei depth, GLenum format,
+                                         GLsizei imageSize, const void *pixels)
+{
+  bool data_stored = false;
+  byte *srcPixels = NULL;
+  PixelUnpackState unpack;
+
+  if(unpackbuf == 0 && pixels != NULL)
+  {
+    unpack.Fetch(&m_Real);
+
+    if(unpack.FastPathCompressed(width, height, depth))
+      srcPixels = (byte *)pixels;
+    else
+      srcPixels = unpack.UnpackCompressed((byte *)pixels, width, height, depth, imageSize);
+  }
+
+  if (unpackbuf != 0)
+    srcPixels = (byte*)m_Real.glMapBufferRange(eGL_PIXEL_UNPACK_BUFFER, (GLintptr)pixels, imageSize, eGL_MAP_READ_BIT);
+
+  if (srcPixels)
+  {
+    // Only the trivial case is handled yet.
+    if (xoffset == 0 && yoffset == 0)
+    {
+      if (target == GL_TEXTURE_2D ||
+          target == GL_TEXTURE_CUBE_MAP_POSITIVE_X ||
+          target == GL_TEXTURE_CUBE_MAP_NEGATIVE_X ||
+          target == GL_TEXTURE_CUBE_MAP_POSITIVE_Y ||
+          target == GL_TEXTURE_CUBE_MAP_NEGATIVE_Y ||
+          target == GL_TEXTURE_CUBE_MAP_POSITIVE_Z ||
+          target == GL_TEXTURE_CUBE_MAP_NEGATIVE_Z ||
+          target == GL_TEXTURE_2D_ARRAY ||
+          target == GL_TEXTURE_CUBE_MAP_ARRAY)
+      {
+        if (depth <= 1)
+        {
+          size_t compressedImageSize = GetCompressedByteSize(width, height, 1, format, level);
+          RDCASSERT(compressedImageSize == (size_t)imageSize);
+          size_t startOffset = compressedImageSize * zoffset;
+          auto& cd = m_Textures[texId].compressedData;
+          auto& cdData = cd[target][level];
+          cdData.resize(startOffset + imageSize);
+          memcpy(cdData.data(), srcPixels, startOffset + imageSize);
+          data_stored = true;
+        }
+      }
+      else if (target ==  GL_TEXTURE_3D)
+      {
+        if (zoffset == 0)
+        {
+          RDCASSERT(GetCompressedByteSize(width, height, depth, format, level) == (size_t)imageSize);
+          auto& cd = m_Textures[texId].compressedData;
+          auto& cdData = cd[target][level];
+          cdData.resize(imageSize);
+          memcpy(cdData.data(), srcPixels, imageSize);
+          data_stored = true;
+        }
+      }
+    }
+
+    if (unpackbuf != 0)
+      m_Real.glUnmapBuffer(eGL_PIXEL_UNPACK_BUFFER);
+  }
+
+  if (!data_stored)
+    RDCDEBUG("storeCompressedTexData: Compressed data is not stored! (%d)", texId);
+
+}
+
+
 void WrappedGLES::glCompressedTexImage2D(GLenum target, GLint level, GLenum internalformat,
                                            GLsizei width, GLsizei height, GLint border,
                                            GLsizei imageSize, const GLvoid *pixels)
@@ -1403,11 +1468,12 @@ void WrappedGLES::glCompressedTexImage2D(GLenum target, GLint level, GLenum inte
     internalformat = GetSizedFormat(m_Real, target, internalformat);
 
     bool fromunpackbuf = false;
-    {
-      GLint unpackbuf = 0;
-      m_Real.glGetIntegerv(eGL_PIXEL_UNPACK_BUFFER_BINDING, &unpackbuf);
-      fromunpackbuf = (unpackbuf != 0);
-    }
+
+    GLint unpackbuf = 0;
+    m_Real.glGetIntegerv(eGL_PIXEL_UNPACK_BUFFER_BINDING, &unpackbuf);
+    fromunpackbuf = (unpackbuf != 0);
+
+    storeCompressedTexData(unpackbuf, record->GetResourceID(), target, level, 0, 0, 0, width, height, 0, internalformat, imageSize, pixels);
 
     // This is kind of an arbitary heuristic, but in the past a game has re-specified a texture with
     // glTexImage over and over
@@ -1516,15 +1582,6 @@ bool WrappedGLES::Serialise_glCompressedTexImage3D(GLenum target,
       m_Textures[liveId].internalFormat = fmt;
     }
 
-    if (DataProvided)
-    {
-      RDCASSERT(GetCompressedByteSize(Width, Height, Depth, fmt, Level) == byteSize);
-      auto& cd = m_Textures[liveId].compressedData;
-      auto& cdData = cd[Target][Level];
-      cdData.resize(byteSize);
-      memcpy(cdData.data(), databuf, byteSize);
-    }
-
     // for creation type chunks we forcibly don't use the unpack buffers as we
     // didn't track and set them up, so unbind it and either we provide data (in buf)
     // or just size the texture to be filled with data later (buf=NULL)
@@ -1579,12 +1636,11 @@ void WrappedGLES::glCompressedTexImage3D(GLenum target, GLint level, GLenum inte
     internalformat = GetSizedFormat(m_Real, target, internalformat);
 
     bool fromunpackbuf = false;
-    {
-      GLint unpackbuf = 0;
-      m_Real.glGetIntegerv(eGL_PIXEL_UNPACK_BUFFER_BINDING, &unpackbuf);
-      fromunpackbuf = (unpackbuf != 0);
-    }
+    GLint unpackbuf = 0;
+    m_Real.glGetIntegerv(eGL_PIXEL_UNPACK_BUFFER_BINDING, &unpackbuf);
+    fromunpackbuf = (unpackbuf != 0);
 
+    storeCompressedTexData(unpackbuf, record->GetResourceID(), target, level, 0, 0, 0, width, height, depth, internalformat, imageSize, pixels);
 
     // This is kind of an arbitary heuristic, but in the past a game has re-specified a texture with
     // glTexImage over and over
@@ -2653,6 +2709,8 @@ void WrappedGLES::glCompressedTexSubImage2D(GLenum target, GLint level, GLint xo
     GLint unpackbuf = 0;
     m_Real.glGetIntegerv(eGL_PIXEL_UNPACK_BUFFER_BINDING, &unpackbuf);
 
+    storeCompressedTexData(unpackbuf, record->GetResourceID(), target, level, xoffset, yoffset, 0, width, height, 0, format, imageSize, pixels);
+
     if(m_State == WRITING_IDLE && unpackbuf != 0)
     {
       GetResourceManager()->MarkDirtyResource(record->GetResourceID());
@@ -2779,6 +2837,8 @@ void WrappedGLES::glCompressedTexSubImage3D(GLenum target, GLint level, GLint xo
 
     GLint unpackbuf = 0;
     m_Real.glGetIntegerv(eGL_PIXEL_UNPACK_BUFFER_BINDING, &unpackbuf);
+
+    storeCompressedTexData(unpackbuf, record->GetResourceID(), target, level, xoffset, yoffset, zoffset, width, height, depth, format, imageSize, pixels);
 
     if(m_State == WRITING_IDLE && unpackbuf != 0)
     {

@@ -693,6 +693,13 @@ private:
   template <typename TP, typename TF>
   void Common_glTexParameter_v(GLenum target, GLenum pname, const TP *params, TF GLHookSet::*function, const GLChunkType chunkType);
 
+  void storeCompressedTexData(GLint unpackbuf, ResourceId texId,
+                              GLenum target, GLint level, GLint xoffset,
+                              GLint yoffset, GLint zoffset, GLsizei width,
+                              GLsizei height, GLsizei depth, GLenum format,
+                              GLsizei imageSize, const void *pixels);
+
+
   // no copy semantics
   WrappedGLES(const WrappedGLES &);
   WrappedGLES &operator=(const WrappedGLES &);

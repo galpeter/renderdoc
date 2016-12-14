@@ -2432,13 +2432,13 @@ byte *GLESReplay::GetTextureData(ResourceId tex, uint32_t arrayIdx, uint32_t mip
 
     if(IsCompressedFormat(intFormat))
     {
-        dataSize = GetCompressedByteSize(width, height, depth, intFormat, mip);
-        ret = new byte[dataSize];
-
-        if (texDetails.compressedData[target][mip].size() == dataSize)
-          memcpy(ret, texDetails.compressedData[target][mip].data(), dataSize);
-        else
-          RDCERR("Different expected and stored compressed texture sizes!");
+      // The compressed formats should be remaped!
+      dataSize = GetCompressedByteSize(width, height, depth, intFormat, mip);
+      ret = new byte[dataSize];
+      if (texDetails.compressedData[target][mip].size() == dataSize)
+        memcpy(ret, texDetails.compressedData[target][mip].data(), dataSize);
+      else
+        RDCERR("Different expected and stored compressed texture sizes!");
     }
     else
     {
