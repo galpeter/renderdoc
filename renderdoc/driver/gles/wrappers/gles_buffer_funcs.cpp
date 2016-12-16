@@ -2375,8 +2375,15 @@ bool WrappedGLES::Serialise_glBindVertexArray(GLuint array)
 
   if(m_State <= EXECUTING)
   {
+    if(id == ResourceId())
+    {
+      m_Real.glBindVertexArray(m_DefaultVAO);
+    }
+    else
+    {
       GLuint live = GetResourceManager()->GetLiveResource(id).name;
       m_Real.glBindVertexArray(live);
+    }
   }
 
   return true;
