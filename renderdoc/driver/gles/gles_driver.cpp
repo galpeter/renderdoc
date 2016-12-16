@@ -2826,7 +2826,7 @@ void WrappedGLES::ProcessChunk(uint64_t offset, GLChunkType context)
     case GEN_RENDERBUFFERS: Serialise_glGenRenderbuffers(0, NULL); break;
     case RENDERBUFFER_STORAGE: Serialise_glRenderbufferStorage(0, eGL_NONE, eGL_NONE, 0, 0); break;
     case RENDERBUFFER_STORAGEMS:
-      Serialise_glRenderbufferStorageMultisample(0, eGL_NONE, 0, eGL_NONE, 0, 0); break;
+      Serialise_Common_glRenderbufferStorageMultisampleEXT(Vendor_Unknown, 0, eGL_NONE, 0, eGL_NONE, 0, 0); break;
 
     case GEN_SAMPLERS: Serialise_glGenSamplers(0, NULL); break;
     case SAMPLER_PARAMETERI: Serialise_glSamplerParameteri(0, eGL_NONE, 0); break;

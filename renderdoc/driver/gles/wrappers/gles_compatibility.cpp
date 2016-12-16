@@ -233,6 +233,18 @@ void WrappedGLES::Compat_glFramebufferTexture2DMultisample(VendorType vendor, GL
     RDCERR("Unsupported function: glFramebufferTexture2DMultisample (%s)", ToStr::Get(vendor).c_str());
 }
 
+void WrappedGLES::Compat_glRenderbufferStorageMultisample(VendorType vendor, GLenum target, GLsizei samples,
+                                                          GLenum internalformat, GLsizei width, GLsizei height)
+{
+  if(vendor == Vendor_EXT && ExtensionSupported[ExtensionSupported_EXT_multisampled_render_to_texture])
+    m_Real.glRenderbufferStorageMultisampleEXT(target, samples, internalformat, width, height);
+  else
+  {
+    RDCERR("glRenderbufferStorageMultisampleEXT is not supported, glRenderbufferStorageMultisample is used instead.");
+    m_Real.glRenderbufferStorageMultisample(target, samples, internalformat, width, height);
+  }
+}
+
 void WrappedGLES::Compat_glDrawElementsBaseVertex(GLenum mode, GLsizei count, GLenum type,
                                                   const void *indices, GLint basevertex)
 {

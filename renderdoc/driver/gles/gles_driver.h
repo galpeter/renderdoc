@@ -1001,6 +1001,7 @@ public:
     Vendor_QCOM,
     Vendor_SUN,
     Vendor_VIV,
+    Vendor_Core,
   };
 
   bool Serialise_Common_glDepthRangeIndexedf(VendorType vendor, GLuint index, GLfloat nearVal, GLfloat farVal);
@@ -1019,6 +1020,13 @@ public:
   void Common_glFramebufferTexture2DMultisample(VendorType vendor, GLenum target, GLenum attachment,
                                                 GLenum textarget, GLuint texture, GLint level,
                                                 GLsizei samples);
+  bool Serialise_Common_glRenderbufferStorageMultisampleEXT(VendorType vendor, GLuint renderbuffer,
+                                                            GLenum target, GLsizei samples,
+                                                            GLenum internalformat, GLsizei width,
+                                                            GLsizei height);
+  void Common_glRenderbufferStorageMultisampleEXT(VendorType vendor, GLenum target, GLsizei samples,
+                                                  GLenum internalformat, GLsizei width,
+                                                  GLsizei height);
 
   // GLES - GL compatibility like methods
   void Compat_glGetTexImage(GLenum target, GLenum texType, GLuint texname, GLint mip, GLenum fmt, GLenum type, GLint width, GLint height, GLint depth, void *ret);
@@ -1037,6 +1045,7 @@ public:
   void Compat_glViewportArrayv(VendorType vendor, GLuint index, GLsizei count, const GLfloat *v);
   void Compat_glScissorArrayv(VendorType vendor, GLuint first, GLsizei count, const GLint *v);
   void Compat_glFramebufferTexture2DMultisample(VendorType vendor, GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level, GLsizei samples);
+  void Compat_glRenderbufferStorageMultisample(VendorType vendor, GLenum target, GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height);
   void Compat_glDrawElementsBaseVertex(GLenum mode, GLsizei count, GLenum type, const void *indices, GLint basevertex);
 };
 

@@ -1284,10 +1284,11 @@ void WrappedGLES::glRenderbufferStorage(GLenum target, GLenum internalformat, GL
   }
 }
 
-bool WrappedGLES::Serialise_glRenderbufferStorageMultisample(GLuint renderbuffer, GLenum target,
-                                                             GLsizei samples, GLenum internalformat,
-                                                             GLsizei width, GLsizei height)
+bool WrappedGLES::Serialise_Common_glRenderbufferStorageMultisampleEXT(
+    VendorType vendor, GLuint renderbuffer, GLenum target, GLsizei samples, GLenum internalformat,
+    GLsizei width, GLsizei height)
 {
+  SERIALISE_ELEMENT(VendorType, vnd, vendor);
   SERIALISE_ELEMENT(GLenum, Target, target);
   SERIALISE_ELEMENT(GLenum, Format, internalformat);
   SERIALISE_ELEMENT(uint32_t, Samples, samples);
@@ -1313,12 +1314,13 @@ bool WrappedGLES::Serialise_glRenderbufferStorageMultisample(GLuint renderbuffer
     GLuint real = GetResourceManager()->GetLiveResource(id).name;
     SafeRenderbufferBinder safeRenderbufferBinder(m_Real, real);
 
-    m_Real.glRenderbufferStorageMultisample(eGL_RENDERBUFFER, Samples, Format, Width, Height);
+    Compat_glRenderbufferStorageMultisample(vnd, eGL_RENDERBUFFER, Samples, Format, Width, Height);
 
     // create read-from texture for displaying this render buffer
     m_Real.glGenTextures(1, &texDetails.renderbufferReadTex);
     m_Real.glBindTexture(eGL_TEXTURE_2D_MULTISAMPLE, texDetails.renderbufferReadTex);
-    m_Real.glTexStorage2DMultisample(eGL_TEXTURE_2D_MULTISAMPLE, Samples, Format, Width, Height, true);
+    m_Real.glTexStorage2DMultisample(eGL_TEXTURE_2D_MULTISAMPLE, Samples, Format, Width, Height,
+                                     true);
 
     m_Real.glGenFramebuffers(2, texDetails.renderbufferFBOs);
 
@@ -1333,12 +1335,14 @@ bool WrappedGLES::Serialise_glRenderbufferStorageMultisample(GLuint renderbuffer
       attach = eGL_DEPTH_STENCIL_ATTACHMENT;
 
     {
-      SafeFramebufferBinder safeFramebufferBinder(m_Real, eGL_FRAMEBUFFER, texDetails.renderbufferFBOs[0]);
+      SafeFramebufferBinder safeFramebufferBinder(m_Real, eGL_FRAMEBUFFER,
+                                                  texDetails.renderbufferFBOs[0]);
       m_Real.glFramebufferRenderbuffer(eGL_FRAMEBUFFER, attach, eGL_RENDERBUFFER, real);
     }
 
     {
-      SafeFramebufferBinder safeFramebufferBinder(m_Real, eGL_FRAMEBUFFER, texDetails.renderbufferFBOs[1]);
+      SafeFramebufferBinder safeFramebufferBinder(m_Real, eGL_FRAMEBUFFER,
+                                                  texDetails.renderbufferFBOs[1]);
       m_Real.glFramebufferTexture2D(eGL_FRAMEBUFFER, attach, eGL_TEXTURE_2D_MULTISAMPLE,
                                     texDetails.renderbufferReadTex, 0);
     }
@@ -1347,11 +1351,11 @@ bool WrappedGLES::Serialise_glRenderbufferStorageMultisample(GLuint renderbuffer
   return true;
 }
 
-void WrappedGLES::glRenderbufferStorageMultisample(GLenum target, GLsizei samples,
-                                                   GLenum internalformat, GLsizei width,
-                                                   GLsizei height)
+void WrappedGLES::Common_glRenderbufferStorageMultisampleEXT(VendorType vendor, GLenum target,
+                                                             GLsizei samples, GLenum internalformat,
+                                                             GLsizei width, GLsizei height)
 {
-  m_Real.glRenderbufferStorageMultisample(target, samples, internalformat, width, height);
+  Compat_glRenderbufferStorageMultisample(vendor, target, samples, internalformat, width, height);
 
   ResourceId rb = GetCtxData().m_Renderbuffer;
 
@@ -1361,8 +1365,8 @@ void WrappedGLES::glRenderbufferStorageMultisample(GLenum target, GLsizei sample
     RDCASSERT(record);
 
     SCOPED_SERIALISE_CONTEXT(RENDERBUFFER_STORAGEMS);
-    Serialise_glRenderbufferStorageMultisample(record->Resource.name, target, samples,
-                                               internalformat, width, height);
+    Serialise_Common_glRenderbufferStorageMultisampleEXT(vendor, record->Resource.name, target,
+                                                         samples, internalformat, width, height);
 
     record->AddChunk(scope.Get());
   }
@@ -1376,4 +1380,20 @@ void WrappedGLES::glRenderbufferStorageMultisample(GLenum target, GLsizei sample
     m_Textures[rb].dimension = 2;
     m_Textures[rb].internalFormat = internalformat;
   }
+}
+
+void WrappedGLES::glRenderbufferStorageMultisample(GLenum target, GLsizei samples,
+                                                   GLenum internalformat, GLsizei width,
+                                                   GLsizei height)
+{
+  Common_glRenderbufferStorageMultisampleEXT(Vendor_Core, target, samples, internalformat, width,
+                                             height);
+}
+
+void WrappedGLES::glRenderbufferStorageMultisampleEXT(GLenum target, GLsizei samples,
+                                                      GLenum internalformat, GLsizei width,
+                                                      GLsizei height)
+{
+  Common_glRenderbufferStorageMultisampleEXT(Vendor_EXT, target, samples, internalformat, width,
+                                             height);
 }

@@ -426,6 +426,7 @@
     HookExtension(PFNGLGETQUERYOBJECTIVEXTPROC, glGetQueryObjectivEXT); \
     HookExtension(PFNGLGETQUERYOBJECTI64VEXTPROC, glGetQueryObjecti64vEXT); \
     HookExtension(PFNGLGETQUERYOBJECTUI64VEXTPROC, glGetQueryObjectui64vEXT); \
+    HookExtension(PFNGLRENDERBUFFERSTORAGEMULTISAMPLEEXTPROC, glRenderbufferStorageMultisampleEXT); \
     HookExtension(PFNGLFRAMEBUFFERTEXTURE2DMULTISAMPLEEXTPROC, glFramebufferTexture2DMultisampleEXT); \
     HookExtension(PFNGLPOLYGONOFFSETCLAMPEXTPROC, glPolygonOffsetClampEXT); \
     HookExtension(PFNGLRASTERSAMPLESEXTPROC, glRasterSamplesEXT); \
@@ -474,7 +475,6 @@
     HookExtensionAlias(PFNGLBLITFRAMEBUFFERPROC, glBlitFramebuffer, glBlitFramebufferNV); \
     HookExtensionAlias(PFNGLRENDERBUFFERSTORAGEMULTISAMPLEPROC, glRenderbufferStorageMultisample, glRenderbufferStorageMultisampleANGLE); \
     HookExtensionAlias(PFNGLRENDERBUFFERSTORAGEMULTISAMPLEPROC, glRenderbufferStorageMultisample, glRenderbufferStorageMultisampleAPPLE); \
-    HookExtensionAlias(PFNGLRENDERBUFFERSTORAGEMULTISAMPLEPROC, glRenderbufferStorageMultisample, glRenderbufferStorageMultisampleEXT); \
     HookExtensionAlias(PFNGLRENDERBUFFERSTORAGEMULTISAMPLEPROC, glRenderbufferStorageMultisample, glRenderbufferStorageMultisampleIMG); \
     HookExtensionAlias(PFNGLRENDERBUFFERSTORAGEMULTISAMPLEPROC, glRenderbufferStorageMultisample, glRenderbufferStorageMultisampleNV); \
     HookExtensionAlias(PFNGLMAPBUFFERRANGEPROC, glMapBufferRange, glMapBufferRangeEXT); \
@@ -1022,6 +1022,7 @@
     HookWrapper3(void, glGetQueryObjectivEXT, GLuint, id, GLenum, pname, GLint *, params); \
     HookWrapper3(void, glGetQueryObjecti64vEXT, GLuint, id, GLenum, pname, GLint64 *, params); \
     HookWrapper3(void, glGetQueryObjectui64vEXT, GLuint, id, GLenum, pname, GLuint64 *, params); \
+    HookWrapper5(void, glRenderbufferStorageMultisampleEXT, GLenum, target, GLsizei, samples, GLenum, internalformat, GLsizei, width, GLsizei, height); \
     HookWrapper6(void, glFramebufferTexture2DMultisampleEXT, GLenum, target, GLenum, attachment, GLenum, textarget, GLuint, texture, GLint, level, GLsizei, samples); \
     HookWrapper3(void, glPolygonOffsetClampEXT, GLfloat, factor, GLfloat, units, GLfloat, clamp); \
     HookWrapper2(void, glRasterSamplesEXT, GLuint, samples, GLboolean, fixedsamplelocations); \

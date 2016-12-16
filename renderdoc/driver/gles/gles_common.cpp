@@ -1659,6 +1659,7 @@ string ToStrHelper<false, WrappedGLES::VendorType>::Get(const WrappedGLES::Vendo
     case WrappedGLES::Vendor_QCOM: return "QCOM";
     case WrappedGLES::Vendor_SUN: return "SUN";
     case WrappedGLES::Vendor_VIV: return "VIV";
+    case WrappedGLES::Vendor_Core: return "Core";
     default: break;
   }
 

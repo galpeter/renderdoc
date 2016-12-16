@@ -294,7 +294,7 @@ struct GLHookSet
   PFNGLREADPIXELSPROC                                         glReadPixels;                 
   PFNGLRELEASESHADERCOMPILERPROC                              glReleaseShaderCompiler;      
   PFNGLRENDERBUFFERSTORAGEPROC                                glRenderbufferStorage;        
-  PFNGLRENDERBUFFERSTORAGEMULTISAMPLEPROC                     glRenderbufferStorageMultisample;// aliases glRenderbufferStorageMultisampleANGLE, glRenderbufferStorageMultisampleAPPLE, glRenderbufferStorageMultisampleEXT, glRenderbufferStorageMultisampleIMG, glRenderbufferStorageMultisampleNV
+  PFNGLRENDERBUFFERSTORAGEMULTISAMPLEPROC                     glRenderbufferStorageMultisample;// aliases glRenderbufferStorageMultisampleANGLE, glRenderbufferStorageMultisampleAPPLE, glRenderbufferStorageMultisampleIMG, glRenderbufferStorageMultisampleNV
   PFNGLRESUMETRANSFORMFEEDBACKPROC                            glResumeTransformFeedback;    
   PFNGLSAMPLECOVERAGEPROC                                     glSampleCoverage;             
   PFNGLSAMPLEMASKIPROC                                        glSampleMaski;                
@@ -729,7 +729,7 @@ struct GLHookSet
 //PFNGLREADNPIXELSKHRPROC                                     glReadnPixelsKHR;             
 //PFNGLRENDERBUFFERSTORAGEMULTISAMPLEANGLEPROC                glRenderbufferStorageMultisampleANGLE;
 //PFNGLRENDERBUFFERSTORAGEMULTISAMPLEAPPLEPROC                glRenderbufferStorageMultisampleAPPLE;
-//PFNGLRENDERBUFFERSTORAGEMULTISAMPLEEXTPROC                  glRenderbufferStorageMultisampleEXT;
+  PFNGLRENDERBUFFERSTORAGEMULTISAMPLEEXTPROC                  glRenderbufferStorageMultisampleEXT;
 //PFNGLRENDERBUFFERSTORAGEMULTISAMPLEIMGPROC                  glRenderbufferStorageMultisampleIMG;
 //PFNGLRENDERBUFFERSTORAGEMULTISAMPLENVPROC                   glRenderbufferStorageMultisampleNV;
   PFNGLRESOLVEDEPTHVALUESNVPROC                               glResolveDepthValuesNV;       

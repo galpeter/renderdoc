@@ -51,11 +51,14 @@ if __name__ == '__main__':
     print('struct GLHookSet')
     print('{')
 
+    # extension functions which are implemented, and also have a non-extension version
+    impl_ext_funcs = ['glRenderbufferStorageMultisampleEXT']
+
     print('  // ++ dllexport')
     for f in functions['gl32.h']:
         aliases = ''
         for e in functions['gl2ext.h']:
-            if e.startswith(f) and e[len(f):] in extensions:
+            if e.startswith(f) and e[len(f):] in extensions and not e in impl_ext_funcs:
                 if aliases:
                     aliases += ', ' + e
                 else:
