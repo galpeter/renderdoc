@@ -217,6 +217,7 @@ size_t GetByteSize(GLsizei w, GLsizei h, GLsizei d, GLenum format, GLenum type)
     case eGL_INT:
     case eGL_FLOAT: elemSize = 4; break;
     case eGL_UNSIGNED_SHORT_4_4_4_4:
+    case eGL_UNSIGNED_SHORT_5_6_5:
     case eGL_UNSIGNED_SHORT_5_5_5_1: return w * h * d * 2;
     case eGL_UNSIGNED_INT_10_10_10_2_OES:
     case eGL_UNSIGNED_INT_2_10_10_10_REV:
@@ -416,7 +417,7 @@ int GetNumMips(const GLHookSet &gl, GLenum target, GLuint tex, GLuint w, GLuint 
 
   GLint immut = 0;
   GLuint oldBinding;
-  gl.glGetIntegerv(TextureBinding(target), (GLint*)&oldBinding);  
+  gl.glGetIntegerv(TextureBinding(target), (GLint*)&oldBinding);
   gl.glBindTexture(target, tex);
   gl.glGetTexParameteriv(target, eGL_TEXTURE_IMMUTABLE_FORMAT, &immut);
 
@@ -471,35 +472,10 @@ GLenum GetSizedFormat(const GLHookSet &gl, GLenum target, GLenum internalFormat)
       return internalFormat;    // already explicitly sized
   }
 
-  switch(target)
-  {
-    case eGL_TEXTURE_CUBE_MAP_POSITIVE_X:
-    case eGL_TEXTURE_CUBE_MAP_NEGATIVE_X:
-    case eGL_TEXTURE_CUBE_MAP_POSITIVE_Y:
-    case eGL_TEXTURE_CUBE_MAP_NEGATIVE_Y:
-    case eGL_TEXTURE_CUBE_MAP_POSITIVE_Z:
-    case eGL_TEXTURE_CUBE_MAP_NEGATIVE_Z: target = eGL_TEXTURE_CUBE_MAP;
-    default: break;
-  }
-
-  GLint red, depth, stencil;
-  if(gl.glGetInternalformativ)
-  {
-// TODO PEPE 
-//    gl.glGetInternalformativ(target, internalFormat, eGL_INTERNALFORMAT_RED_SIZE, sizeof(GLint),
-//                             &red);
-//    gl.glGetInternalformativ(target, internalFormat, eGL_INTERNALFORMAT_DEPTH_SIZE, sizeof(GLint),
-//                             &depth);
-//    gl.glGetInternalformativ(target, internalFormat, eGL_INTERNALFORMAT_STENCIL_SIZE, sizeof(GLint),
-//                             &stencil);
-  }
-  else
-  {
-    // without the query function, just default to sensible defaults
-    red = 8;
-    depth = 32;
-    stencil = 8;
-  }
+  GLint red;
+  GLint depth;
+  gl.glGetTexLevelParameteriv(target, 0, eGL_TEXTURE_RED_SIZE, &red);
+  gl.glGetTexLevelParameteriv(target, 0, eGL_TEXTURE_DEPTH_SIZE, &depth);
 
   switch(internalFormat)
   {
@@ -508,47 +484,61 @@ GLenum GetSizedFormat(const GLHookSet &gl, GLenum target, GLenum internalFormat)
         return eGL_R32F;
       else if(red == 16)
         return eGL_R16_EXT;
-      else
+      else if(red == 8)
         return eGL_R8;
+      break;
     case eGL_RG:
       if(red == 32)
         return eGL_RG32F;
       else if(red == 16)
         return eGL_RG16_EXT;
-      else
+      else if(red == 8)
         return eGL_RG8;
+      break;
     case eGL_RGB:
       if(red == 32)
         return eGL_RGB32F;
       else if(red == 16)
         return eGL_RGB16_EXT;
-      else
+      else if(red == 8)
         return eGL_RGB8;
+      else if(red == 5)
+        return eGL_RGB565;
+      break;
     case eGL_RGBA:
       if(red == 32)
         return eGL_RGBA32F;
       else if(red == 16)
         return eGL_RGBA16_EXT;
-      else
+      else if(red == 8)
         return eGL_RGBA8;
+      else if (red == 4)
+        return eGL_RGBA4;
+      else if (red == 5)
+        return eGL_RGB5_A1;
+      break;
     case eGL_STENCIL:
     case eGL_STENCIL_INDEX:
         return eGL_STENCIL_INDEX8;
     case eGL_DEPTH_COMPONENT:
       if(depth == 32)
         return eGL_DEPTH_COMPONENT32F;
+      else if (depth == 24)
+        return eGL_DEPTH_COMPONENT24;
       else if(depth == 16)
         return eGL_DEPTH_COMPONENT16;
-      else
-        return eGL_DEPTH_COMPONENT24;
+      break;
     case eGL_DEPTH_STENCIL:
-      if(depth == 32)
+      if (depth == 32)
         return eGL_DEPTH32F_STENCIL8;
-      else
+      else if (depth == 24)
         return eGL_DEPTH24_STENCIL8;
-    default: break;
+      break;
+    default: 
+     break;
   }
 
+  RDCWARN("Unhandled unsized interal format 0x%04X. (red:%d depth:%d)", internalFormat, red, depth);
   return internalFormat;
 }
 
@@ -885,7 +875,7 @@ int TextureTargetIndex(GLenum target)
     case eGL_TEXTURE_2D_MULTISAMPLE:        return 2;
     case eGL_TEXTURE_2D_MULTISAMPLE_ARRAY:  return 3;
     case eGL_TEXTURE_3D:                    return 4;
-    case eGL_TEXTURE_CUBE_MAP:              
+    case eGL_TEXTURE_CUBE_MAP:
     case eGL_TEXTURE_CUBE_MAP_POSITIVE_X:
     case eGL_TEXTURE_CUBE_MAP_NEGATIVE_X:
     case eGL_TEXTURE_CUBE_MAP_POSITIVE_Y:

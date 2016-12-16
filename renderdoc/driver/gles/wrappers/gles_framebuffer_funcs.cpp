@@ -1258,8 +1258,6 @@ bool WrappedGLES::Serialise_glRenderbufferStorage(GLuint renderbuffer, GLenum ta
 void WrappedGLES::glRenderbufferStorage(GLenum target, GLenum internalformat, GLsizei width,
                                         GLsizei height)
 {
-  internalformat = GetSizedFormat(m_Real, eGL_RENDERBUFFER, internalformat);
-
   m_Real.glRenderbufferStorage(target, internalformat, width, height);
 
   ResourceId rb = GetCtxData().m_Renderbuffer;
@@ -1353,8 +1351,6 @@ void WrappedGLES::glRenderbufferStorageMultisample(GLenum target, GLsizei sample
                                                    GLenum internalformat, GLsizei width,
                                                    GLsizei height)
 {
-  internalformat = GetSizedFormat(m_Real, eGL_RENDERBUFFER, internalformat);
-
   m_Real.glRenderbufferStorageMultisample(target, samples, internalformat, width, height);
 
   ResourceId rb = GetCtxData().m_Renderbuffer;
