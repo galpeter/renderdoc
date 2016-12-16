@@ -1462,11 +1462,6 @@ GLboolean WrappedGLES::glUnmapBuffer(GLenum target)
   return m_Real.glUnmapBuffer(target);
 }
 
-GLboolean WrappedGLES::glUnmapBufferOES(GLenum target)
-{
-  return glUnmapBuffer(target);
-}
-
 bool WrappedGLES::Serialise_glFlushMappedBufferRange(GLenum target, GLintptr offset,
                                                                GLsizeiptr length)
 {
