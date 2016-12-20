@@ -1913,18 +1913,15 @@ void WrappedGLES::glEndTransformFeedback()
 
 bool WrappedGLES::Serialise_glVertexAttribPointer(GLuint buffer,
                                                   GLuint index, GLint size, GLenum type,
-                                                  GLboolean normalized, GLsizei stride, const void *pointer, size_t dataSize,
+                                                  GLboolean normalized, GLsizei stride, const void *pointer,
                                                   bool isInteger)
 {
-
   SERIALISE_ELEMENT(uint32_t, Index, index);
   SERIALISE_ELEMENT(int32_t, Size, size);
   SERIALISE_ELEMENT(GLenum, Type, type);
   SERIALISE_ELEMENT(uint8_t, Norm, normalized);
   SERIALISE_ELEMENT(uint32_t, Stride, stride);
-  SERIALISE_ELEMENT(bool, LocalData, dataSize != 0);
   SERIALISE_ELEMENT(uint64_t, Offset, (uint64_t)pointer);
-  SERIALISE_ELEMENT_BUF(byte *, bytes, pointer, dataSize);
   SERIALISE_ELEMENT(bool, IsIntegerMode, isInteger);
   SERIALISE_ELEMENT(ResourceId, id, GetCtxData().m_VertexArrayRecord->GetResourceID());
   SERIALISE_ELEMENT(ResourceId, bid,
@@ -1942,23 +1939,16 @@ bool WrappedGLES::Serialise_glVertexAttribPointer(GLuint buffer,
     SafeVAOBinder safeVAOBinder(m_Real, vaobj);
     SafeBufferBinder SafeBufferBinder(m_Real, eGL_ARRAY_BUFFER, buffer);
 
-    if (IsIntegerMode) // TODO(elecro): do we really need both here?
+    if(IsIntegerMode)
     {
-      if (LocalData)
-        m_Real.glVertexAttribIPointer(Index, Size, Type, Stride, (const void*)bytes);
-      else
-        m_Real.glVertexAttribIPointer(Index, Size, Type, Stride, (const void*)Offset);
+      m_Real.glVertexAttribIPointer(Index, Size, Type, Stride, (const void*)Offset);
     }
     else
     {
-      if (LocalData)
-        m_Real.glVertexAttribPointer(Index, Size, Type, Norm, Stride, (const void*)bytes);
-      else
-        m_Real.glVertexAttribPointer(Index, Size, Type, Norm, Stride, (const void*)Offset);
+      m_Real.glVertexAttribPointer(Index, Size, Type, Norm, Stride, (const void*)Offset);
     }
-    // store pointers to local data buffers in order to release them at the end of the replay
-    m_localDataBuffers.push_back(bytes);
   }
+
   return true;
 }
 
@@ -1994,7 +1984,6 @@ void WrappedGLES::glVertexAttribPointer(GLuint index, GLint size, GLenum type,
             normalized,
             stride,
             pointer,
-            0,
             false);
         r->AddChunk(scope.Get());
       }
@@ -2034,7 +2023,6 @@ void WrappedGLES::glVertexAttribIPointer(GLuint index, GLint size, GLenum type,
             GL_FALSE,
             stride,
             pointer,
-            0,
             true);
         r->AddChunk(scope.Get());
       }

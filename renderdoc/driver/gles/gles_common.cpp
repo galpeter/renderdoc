@@ -656,6 +656,7 @@ ResourceFormat MakeResourceFormat(WrappedGLES &gl, GLenum target, GLenum fmt)
 
   // Since the internal format queries are limited in GLES the format parameters have to be set manually.
   // TODO: Extend the format list
+  // see OpenGL ES Specification 3.2, Table 8.10 Sized internal color formats
   {
     if (fmt == eGL_SRGB8_ALPHA8) {
       ret.compByteWidth = 1;

@@ -682,11 +682,9 @@ private:
 
   vector<string> globalExts;
 
-  vector<byte *> m_localDataBuffers;
-  void clearLocalDataBuffers();
-
-  void writeFakeVertexAttribPointer(GLsizei count);
-  void writeFakeVertexAttribPointerForDrawElements(GLsizei count, GLenum type, const void *indices);
+  void writeFakeVertexAttribPointer(GLsizei count, vector<GLuint>& fakeBuffers);
+  void writeFakeVertexAttribPointerForDrawElements(GLsizei count, GLenum type, const void *indices, vector<GLuint>& fakeBuffers);
+  void removeFakeVertexBuffers(vector<GLuint>& fakeBuffers);
   GLsizei getVertexCountFromIndices(GLsizei count, GLenum type, const void *indices);
 
   template<typename TP, typename TF>
@@ -800,7 +798,7 @@ public:
 
   bool Serialise_glVertexAttribPointer(GLuint buffer,
                                        GLuint index, GLint size, GLenum type,
-                                       GLboolean normalized, GLsizei stride, const void *pointer, size_t dataSize,
+                                       GLboolean normalized, GLsizei stride, const void *pointer,
                                        bool isInteger);
 
   bool Serialise_glVertexArrayElementBuffer(GLuint vaobj, GLuint buffer);

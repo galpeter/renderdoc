@@ -227,12 +227,8 @@ void WrappedGLES::glMemoryBarrierByRegion(GLbitfield barriers)
     m_ContextRecord->AddChunk(scope.Get());
   }
 }
-
-size_t calculateVertexPointerSize(GLint size, GLenum type, GLsizei stride, GLsizei count)
+size_t calculateVertexAttribSize(GLint size, GLenum type)
 {
-    if (count == 0)
-      return 0;
-
     if (size > 4) {
       RDCERR("Unexpected size greater than 4!");
     }
@@ -254,74 +250,119 @@ size_t calculateVertexPointerSize(GLint size, GLenum type, GLsizei stride, GLsiz
       case eGL_FLOAT:
       case eGL_FIXED:
         elementSize *= 4; break;
-      default:
-        RDCERR("Unexpected type %x", type);
-        break;
       case eGL_UNSIGNED_INT_10_10_10_2_OES:
       case eGL_UNSIGNED_INT_2_10_10_10_REV:
         elementSize *= 4;
         break;
+      default:
+        RDCERR("Unexpected type %x", type);
+        break;
     }
 
-    if (stride == 0)
-      stride = elementSize;
-
-    return stride * (count - 1) + elementSize;
+    return elementSize;
 }
 
-void WrappedGLES::writeFakeVertexAttribPointer(GLsizei count)
+// note: glVertexAttribPointer invocation will be saved differently,
+// local attribute data will be uploaded into new array buffer(s)
+void WrappedGLES::writeFakeVertexAttribPointer(GLsizei count, vector<GLuint>& fakeBuffers)
 {
-    ContextData &cd = GetCtxData();
-    GLResourceRecord *bufrecord = cd.GetActiveBufferRecord(eGL_ARRAY_BUFFER);
-    GLResourceRecord *varecord = cd.m_VertexArrayRecord;
+  GLuint buf = 0;
+  GLuint prevBinding = 0;
 
-    // void APIENTRY glVertexAttribPointer(GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride, const GLvoid * pointer)
-    GLint maxVertexAttrib = 0;
-    m_Real.glGetIntegerv(eGL_MAX_VERTEX_ATTRIBS, &maxVertexAttrib);
-    for (GLint index = 0; index < maxVertexAttrib; ++index)
+  m_Real.glGetIntegerv(eGL_ARRAY_BUFFER_BINDING, (GLint *)&prevBinding);
+
+  GLint maxVertexAttrib = 0;
+  m_Real.glGetIntegerv(eGL_MAX_VERTEX_ATTRIBS, &maxVertexAttrib);
+  for(GLint index = 0; index < maxVertexAttrib; ++index)
+  {
+    GLint enabled = 0;
+    m_Real.glGetVertexAttribiv(index, eGL_VERTEX_ATTRIB_ARRAY_ENABLED, &enabled);
+    if(enabled)
     {
-        GLint enabled = 0;
-        m_Real.glGetVertexAttribiv(index, eGL_VERTEX_ATTRIB_ARRAY_ENABLED, &enabled);
-        if (enabled) {
-            GLint binding = 0;
-            m_Real.glGetVertexAttribiv(index, eGL_VERTEX_ATTRIB_ARRAY_BUFFER_BINDING, &binding);
-            if (binding == 0) {
-              GLint size = 0;
-              m_Real.glGetVertexAttribiv(index, eGL_VERTEX_ATTRIB_ARRAY_SIZE, &size);
-              GLint type = 0;
-              m_Real.glGetVertexAttribiv(index, eGL_VERTEX_ATTRIB_ARRAY_TYPE, &type);
-              GLint normalized = 0;
-              m_Real.glGetVertexAttribiv(index, eGL_VERTEX_ATTRIB_ARRAY_NORMALIZED, &normalized);
-              GLint stride = 0;
-              m_Real.glGetVertexAttribiv(index, eGL_VERTEX_ATTRIB_ARRAY_STRIDE, &stride);
-              GLint isInteger = 0;
-              m_Real.glGetVertexAttribiv(index, eGL_VERTEX_ATTRIB_ARRAY_INTEGER, &isInteger);
-              GLvoid * pointer = 0;
-              m_Real.glGetVertexAttribPointerv(index, eGL_VERTEX_ATTRIB_ARRAY_POINTER, &pointer);
-              size_t attribDataSize = calculateVertexPointerSize(size, GLenum(type), stride, count);
+      GLint binding = 0;
+      m_Real.glGetVertexAttribiv(index, eGL_VERTEX_ATTRIB_ARRAY_BUFFER_BINDING, &binding);
+      if(binding == 0)
+      {
+        GLint size = 0;
+        m_Real.glGetVertexAttribiv(index, eGL_VERTEX_ATTRIB_ARRAY_SIZE, &size);
+        GLint type = 0;
+        m_Real.glGetVertexAttribiv(index, eGL_VERTEX_ATTRIB_ARRAY_TYPE, &type);
+        GLint normalized = 0;
+        m_Real.glGetVertexAttribiv(index, eGL_VERTEX_ATTRIB_ARRAY_NORMALIZED, &normalized);
+        GLint stride = 0;
+        m_Real.glGetVertexAttribiv(index, eGL_VERTEX_ATTRIB_ARRAY_STRIDE, &stride);
+        GLint isInteger = 0;
+        m_Real.glGetVertexAttribiv(index, eGL_VERTEX_ATTRIB_ARRAY_INTEGER, &isInteger);
+        GLvoid *pointer = 0;
+        m_Real.glGetVertexAttribPointerv(index, eGL_VERTEX_ATTRIB_ARRAY_POINTER, &pointer);
 
-              SCOPED_SERIALISE_CONTEXT(VERTEXATTRIBPOINTER);
-              Serialise_glVertexAttribPointer(
-                bufrecord ? bufrecord->Resource.name : 0,
-                index,
-                size,
-                GLenum(type),
-                normalized,
-                stride,
-                pointer,
-                attribDataSize,
-                isInteger != 0);
+        // create a new array buffer and copy attrib data into it (without gaps)
+        {
+          size_t attribSize = calculateVertexAttribSize(size, GLenum(type));
+          size_t offs = (stride == 0 ? attribSize : stride);
+          size_t packedDataSize = attribSize * count;
 
-              m_ContextRecord->AddChunk(scope.Get());
+          byte *data = new byte[packedDataSize];
+
+          if(attribSize == offs)
+          {
+            memcpy(data, pointer, packedDataSize);
+          }
+          else
+          {
+            for(GLsizei i = 0; i < count; ++i)
+            {
+              void *dst = (void *)(data + (i * attribSize));
+              void *src = (void *)((byte *)pointer + (i * offs));
+              memcpy(dst, src, attribSize);
             }
+          }
+
+          glGenBuffers(1, &buf);
+          glBindBuffer(eGL_ARRAY_BUFFER, buf);
+          glBufferData(eGL_ARRAY_BUFFER, packedDataSize, data, eGL_STATIC_DRAW);
+
+          fakeBuffers.push_back(buf);
+
+          // save glVertexAttribPointer with modified stride and pointer values, but
+          // do not override the original call
+          SCOPED_SERIALISE_CONTEXT(VERTEXATTRIBPOINTER);
+          Serialise_glVertexAttribPointer(
+            buf,
+            index,
+            size,
+            GLenum(type),
+            normalized,
+            0, // stride
+            0, // pointer
+            isInteger != 0);
+
+          m_ContextRecord->AddChunk(scope.Get());
+
+          delete[] data;
         }
+      }
     }
+  }
+
+  if(buf && buf != prevBinding)
+    glBindBuffer(eGL_ARRAY_BUFFER, prevBinding);
 }
 
 void WrappedGLES::writeFakeVertexAttribPointerForDrawElements(GLsizei count, GLenum type,
-                                                              const void *indices)
+                                                              const void *indices,
+                                                              vector<GLuint>& fakeBuffers)
 {
-  writeFakeVertexAttribPointer(getVertexCountFromIndices(count, type, indices));
+  writeFakeVertexAttribPointer(getVertexCountFromIndices(count, type, indices), fakeBuffers);
+}
+
+void WrappedGLES::removeFakeVertexBuffers(vector<GLuint>& fakeBuffers)
+{
+  if(!fakeBuffers.empty())
+  {
+    glDeleteBuffers(fakeBuffers.size(), fakeBuffers.data());
+    fakeBuffers.clear();
+  }
 }
 
 template <typename T>
@@ -388,7 +429,6 @@ bool WrappedGLES::Serialise_glDrawArrays(GLenum mode, GLint first, GLsizei count
   if(m_State <= EXECUTING)
   {
     m_Real.glDrawArrays(Mode, First, Count);
-    clearLocalDataBuffers();
   }
 
   const string desc = m_pSerialiser->GetDebugStr();
@@ -426,12 +466,15 @@ void WrappedGLES::glDrawArrays(GLenum mode, GLint first, GLsizei count)
 
   if(m_State == WRITING_CAPFRAME)
   {
-    writeFakeVertexAttribPointer(count);
+    vector<GLuint> fakeBuffers;
+    writeFakeVertexAttribPointer(count, fakeBuffers);
 
     SCOPED_SERIALISE_CONTEXT(DRAWARRAYS);
     Serialise_glDrawArrays(mode, first, count);
 
     m_ContextRecord->AddChunk(scope.Get());
+
+    removeFakeVertexBuffers(fakeBuffers);
 
     GLRenderState state(&m_Real, m_pSerialiser, m_State);
     state.FetchState(GetCtx(), this);
@@ -452,7 +495,6 @@ bool WrappedGLES::Serialise_glDrawArraysIndirect(GLenum mode, const void *indire
   if(m_State <= EXECUTING)
   {
     m_Real.glDrawArraysIndirect(Mode, (const void *)Offset);
-    clearLocalDataBuffers();
   }
 
   const string desc = m_pSerialiser->GetDebugStr();
@@ -522,7 +564,6 @@ bool WrappedGLES::Serialise_glDrawArraysInstanced(GLenum mode, GLint first, GLsi
   if(m_State <= EXECUTING)
   {
     m_Real.glDrawArraysInstanced(Mode, First, Count, InstanceCount);
-    clearLocalDataBuffers();
   }
 
   const string desc = m_pSerialiser->GetDebugStr();
@@ -562,12 +603,15 @@ void WrappedGLES::glDrawArraysInstanced(GLenum mode, GLint first, GLsizei count,
 
   if(m_State == WRITING_CAPFRAME)
   {
-    writeFakeVertexAttribPointer(count);
+    vector<GLuint> fakeBuffers;
+    writeFakeVertexAttribPointer(count, fakeBuffers);;
 
     SCOPED_SERIALISE_CONTEXT(DRAWARRAYS_INSTANCED);
     Serialise_glDrawArraysInstanced(mode, first, count, instancecount);
 
     m_ContextRecord->AddChunk(scope.Get());
+
+    removeFakeVertexBuffers(fakeBuffers);
 
     GLRenderState state(&m_Real, m_pSerialiser, m_State);
     state.FetchState(GetCtx(), this);
@@ -593,7 +637,6 @@ bool WrappedGLES::Serialise_glDrawArraysInstancedBaseInstanceEXT(GLenum mode, GL
   if(m_State <= EXECUTING)
   {
     Compat_glDrawArraysInstancedBaseInstanceEXT(Mode, First, Count, InstanceCount, BaseInstance);
-    clearLocalDataBuffers();
   }
 
   const string desc = m_pSerialiser->GetDebugStr();
@@ -633,12 +676,15 @@ void WrappedGLES::glDrawArraysInstancedBaseInstanceEXT(GLenum mode, GLint first,
 
   if(m_State == WRITING_CAPFRAME)
   {
-    writeFakeVertexAttribPointer(count);
+    vector<GLuint> fakeBuffers;
+    writeFakeVertexAttribPointer(count, fakeBuffers);
 
     SCOPED_SERIALISE_CONTEXT(DRAWARRAYS_INSTANCEDBASEINSTANCE);
     Serialise_glDrawArraysInstancedBaseInstanceEXT(mode, first, count, instancecount, baseinstance);
 
     m_ContextRecord->AddChunk(scope.Get());
+
+    removeFakeVertexBuffers(fakeBuffers);
 
     GLRenderState state(&m_Real, m_pSerialiser, m_State);
     state.FetchState(GetCtx(), this);
@@ -734,7 +780,6 @@ void WrappedGLES::Common_postElements(byte *idxDelete)
     // delete serialised data
     SAFE_DELETE_ARRAY(idxDelete);
   }
-  clearLocalDataBuffers();
 }
 
 bool WrappedGLES::Serialise_glDrawElements(GLenum mode, GLsizei count, GLenum type,
@@ -795,12 +840,15 @@ void WrappedGLES::glDrawElements(GLenum mode, GLsizei count, GLenum type, const 
 
   if(m_State == WRITING_CAPFRAME)
   {
-    writeFakeVertexAttribPointerForDrawElements(count, type, indices);
+    vector<GLuint> fakeBuffers;
+    writeFakeVertexAttribPointerForDrawElements(count, type, indices, fakeBuffers);
 
     SCOPED_SERIALISE_CONTEXT(DRAWELEMENTS);
     Serialise_glDrawElements(mode, count, type, indices);
 
     m_ContextRecord->AddChunk(scope.Get());
+
+    removeFakeVertexBuffers(fakeBuffers);
 
     GLRenderState state(&m_Real, m_pSerialiser, m_State);
     state.FetchState(GetCtx(), this);
@@ -822,7 +870,6 @@ bool WrappedGLES::Serialise_glDrawElementsIndirect(GLenum mode, GLenum type, con
   if(m_State <= EXECUTING)
   {
     m_Real.glDrawElementsIndirect(Mode, Type, (const void *)Offset);
-    clearLocalDataBuffers();
   }
 
   const string desc = m_pSerialiser->GetDebugStr();
@@ -948,12 +995,15 @@ void WrappedGLES::glDrawRangeElements(GLenum mode, GLuint start, GLuint end, GLs
 
   if(m_State == WRITING_CAPFRAME)
   {
-    writeFakeVertexAttribPointerForDrawElements(count, type, indices);
+    vector<GLuint> fakeBuffers;
+    writeFakeVertexAttribPointerForDrawElements(count, type, indices, fakeBuffers);
 
     SCOPED_SERIALISE_CONTEXT(DRAWRANGEELEMENTS);
     Serialise_glDrawRangeElements(mode, start, end, count, type, indices);
 
     m_ContextRecord->AddChunk(scope.Get());
+
+    removeFakeVertexBuffers(fakeBuffers);
 
     GLRenderState state(&m_Real, m_pSerialiser, m_State);
     state.FetchState(GetCtx(), this);
@@ -1031,12 +1081,15 @@ void WrappedGLES::glDrawRangeElementsBaseVertex(GLenum mode, GLuint start, GLuin
 
   if(m_State == WRITING_CAPFRAME)
   {
-    writeFakeVertexAttribPointerForDrawElements(count, type, indices);
+    vector<GLuint> fakeBuffers;
+    writeFakeVertexAttribPointerForDrawElements(count, type, indices, fakeBuffers);
 
     SCOPED_SERIALISE_CONTEXT(DRAWRANGEELEMENTSBASEVERTEX);
     Serialise_glDrawRangeElementsBaseVertex(mode, start, end, count, type, indices, basevertex);
 
     m_ContextRecord->AddChunk(scope.Get());
+
+    removeFakeVertexBuffers(fakeBuffers);
 
     GLRenderState state(&m_Real, m_pSerialiser, m_State);
     state.FetchState(GetCtx(), this);
@@ -1109,12 +1162,15 @@ void WrappedGLES::glDrawElementsBaseVertex(GLenum mode, GLsizei count, GLenum ty
 
   if(m_State == WRITING_CAPFRAME)
   {
-    writeFakeVertexAttribPointerForDrawElements(count, type, indices);
+    vector<GLuint> fakeBuffers;
+    writeFakeVertexAttribPointerForDrawElements(count, type, indices, fakeBuffers);
 
     SCOPED_SERIALISE_CONTEXT(DRAWELEMENTS_BASEVERTEX);
     Serialise_glDrawElementsBaseVertex(mode, count, type, indices, basevertex);
 
     m_ContextRecord->AddChunk(scope.Get());
+
+    removeFakeVertexBuffers(fakeBuffers);
 
     GLRenderState state(&m_Real, m_pSerialiser, m_State);
     state.FetchState(GetCtx(), this);
@@ -1187,12 +1243,15 @@ void WrappedGLES::glDrawElementsInstanced(GLenum mode, GLsizei count, GLenum typ
 
   if(m_State == WRITING_CAPFRAME)
   {
-    writeFakeVertexAttribPointerForDrawElements(count, type, indices);
+    vector<GLuint> fakeBuffers;
+    writeFakeVertexAttribPointerForDrawElements(count, type, indices, fakeBuffers);
 
     SCOPED_SERIALISE_CONTEXT(DRAWELEMENTS_INSTANCED);
     Serialise_glDrawElementsInstanced(mode, count, type, indices, instancecount);
 
     m_ContextRecord->AddChunk(scope.Get());
+
+    removeFakeVertexBuffers(fakeBuffers);
 
     GLRenderState state(&m_Real, m_pSerialiser, m_State);
     state.FetchState(GetCtx(), this);
@@ -1270,13 +1329,16 @@ void WrappedGLES::glDrawElementsInstancedBaseInstanceEXT(GLenum mode, GLsizei co
 
   if(m_State == WRITING_CAPFRAME)
   {
-    writeFakeVertexAttribPointerForDrawElements(count, type, indices);
+    vector<GLuint> fakeBuffers;
+    writeFakeVertexAttribPointerForDrawElements(count, type, indices, fakeBuffers);
 
     SCOPED_SERIALISE_CONTEXT(DRAWELEMENTS_INSTANCEDBASEINSTANCE);
     Serialise_glDrawElementsInstancedBaseInstanceEXT(mode, count, type, indices, instancecount,
                                                   baseinstance);
 
     m_ContextRecord->AddChunk(scope.Get());
+
+    removeFakeVertexBuffers(fakeBuffers);
 
     GLRenderState state(&m_Real, m_pSerialiser, m_State);
     state.FetchState(GetCtx(), this);
@@ -1355,13 +1417,16 @@ void WrappedGLES::glDrawElementsInstancedBaseVertex(GLenum mode, GLsizei count, 
 
   if(m_State == WRITING_CAPFRAME)
   {
-    writeFakeVertexAttribPointerForDrawElements(count, type, indices);
+    vector<GLuint> fakeBuffers;
+    writeFakeVertexAttribPointerForDrawElements(count, type, indices, fakeBuffers);
 
     SCOPED_SERIALISE_CONTEXT(DRAWELEMENTS_INSTANCEDBASEVERTEX);
     Serialise_glDrawElementsInstancedBaseVertex(mode, count, type, indices, instancecount,
                                                 basevertex);
 
     m_ContextRecord->AddChunk(scope.Get());
+
+    removeFakeVertexBuffers(fakeBuffers);
 
     GLRenderState state(&m_Real, m_pSerialiser, m_State);
     state.FetchState(GetCtx(), this);
@@ -1443,13 +1508,16 @@ void WrappedGLES::glDrawElementsInstancedBaseVertexBaseInstanceEXT(GLenum mode, 
 
   if(m_State == WRITING_CAPFRAME)
   {
-    writeFakeVertexAttribPointerForDrawElements(count, type, indices);
+    vector<GLuint> fakeBuffers;
+    writeFakeVertexAttribPointerForDrawElements(count, type, indices, fakeBuffers);
 
     SCOPED_SERIALISE_CONTEXT(DRAWELEMENTS_INSTANCEDBASEVERTEXBASEINSTANCE);
     Serialise_glDrawElementsInstancedBaseVertexBaseInstanceEXT(
         mode, count, type, indices, instancecount, basevertex, baseinstance);
 
     m_ContextRecord->AddChunk(scope.Get());
+
+    removeFakeVertexBuffers(fakeBuffers);
 
     GLRenderState state(&m_Real, m_pSerialiser, m_State);
     state.FetchState(GetCtx(), this);
