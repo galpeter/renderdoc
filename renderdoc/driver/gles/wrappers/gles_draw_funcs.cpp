@@ -712,73 +712,43 @@ bool WrappedGLES::Check_preElements()
   return true;
 }
 
-byte *WrappedGLES::Common_preElements(GLsizei Count, GLenum Type, uint64_t &IdxOffset)
+GLuint WrappedGLES::createFakeElementArrayBuffer(GLsizei count, GLenum type, const void *&indices)
 {
-  GLint idxbuf = 0;
-  // while writing, check to see if an index buffer is bound
-  if(m_State >= WRITING)
-    m_Real.glGetIntegerv(eGL_ELEMENT_ARRAY_BUFFER_BINDING, &idxbuf);
-
-  // serialise whether we're reading indices as memory
-  SERIALISE_ELEMENT(bool, IndicesFromMemory, idxbuf == 0);
-
-  if(IndicesFromMemory)
+  if(m_State == WRITING_CAPFRAME)
   {
-    uint32_t IdxSize = Type == eGL_UNSIGNED_BYTE ? 1 : Type == eGL_UNSIGNED_SHORT
-                                                           ? 2
-                                                           : /*Type == eGL_UNSIGNED_INT*/ 4;
+    GLuint idxbuf = 0;
 
-    // serialise the actual data (IdxOffset is a pointer not an offset in this case)
-    SERIALISE_ELEMENT_BUF(byte *, idxdata, (void *)IdxOffset, size_t(IdxSize * Count));
+    // while writing, check to see if an index buffer is bound
+    m_Real.glGetIntegerv(eGL_ELEMENT_ARRAY_BUFFER_BINDING, (GLint *)&idxbuf);
 
-    if(m_State <= EXECUTING)
+    // create a fake index buffer
+    if(idxbuf == 0)
     {
-      GLsizeiptr idxlen = GLsizeiptr(IdxSize * Count);
+      uint32_t idxSize = type == eGL_UNSIGNED_BYTE ? 1 : type == eGL_UNSIGNED_SHORT
+                                                             ? 2
+                                                             : /*type == eGL_UNSIGNED_INT*/ 4;
+      GLsizeiptr idxlen = GLsizeiptr(idxSize * count);
 
-      // resize fake index buffer if necessary
-      if(idxlen > m_FakeIdxSize)
-      {
-        m_Real.glBindBuffer(eGL_ELEMENT_ARRAY_BUFFER, 0);
-        m_Real.glDeleteBuffers(1, &m_FakeIdxBuf);
+      glGenBuffers(1, &idxbuf);
+      glBindBuffer(eGL_ELEMENT_ARRAY_BUFFER, idxbuf);
+      glBufferData(eGL_ELEMENT_ARRAY_BUFFER, idxlen, indices, eGL_STATIC_DRAW);
 
-        m_FakeIdxSize = idxlen;
+      // Set pointer to 0 - means we read data from start of our fake index buffer
+      indices = 0;
 
-        m_Real.glGenBuffers(1, &m_FakeIdxBuf);
-        m_Real.glBindBuffer(eGL_ELEMENT_ARRAY_BUFFER, m_FakeIdxBuf);
-        Compat_glBufferStorageEXT(eGL_ELEMENT_ARRAY_BUFFER, m_FakeIdxSize, NULL, eGL_DYNAMIC_STORAGE_BIT_EXT);
-      }
-
-      // bind and update fake index buffer, to draw from the 'immediate' index data
-      m_Real.glBindBuffer(eGL_ELEMENT_ARRAY_BUFFER, m_FakeIdxBuf);
-
-      m_Real.glBufferSubData(eGL_ELEMENT_ARRAY_BUFFER, 0, idxlen, idxdata);
-
-      // Set offset to 0 - means we read data from start of our fake index buffer
-      IdxOffset = 0;
-
-      // we'll delete this later (only when replaying)
-      return idxdata;
+      return idxbuf;
     }
-
-    // can just return NULL, since we don't need to do any cleanup or deletion
   }
 
-  return NULL;
+  return 0;
 }
 
-void WrappedGLES::Common_postElements(byte *idxDelete)
+void WrappedGLES::removeFakeElementArrayBuffer(GLuint idxBuf)
 {
-  // unbind temporary fake index buffer we used to pass 'immediate' index data
-  if(idxDelete)
+  if(m_State == WRITING_CAPFRAME && idxBuf)
   {
-    m_Real.glBindBuffer(eGL_ELEMENT_ARRAY_BUFFER, 0);
-
-//    AddDebugMessage(eDbgCategory_Deprecated, eDbgSeverity_High, eDbgSource_IncorrectAPIUse,
-//                    "Assuming GL core profile is used then specifying indices as a raw array, "
-//                    "not as offset into element array buffer, is illegal.");
-
-    // delete serialised data
-    SAFE_DELETE_ARRAY(idxDelete);
+    glBindBuffer(eGL_ELEMENT_ARRAY_BUFFER, 0);
+    glDeleteBuffers(1, &idxBuf);
   }
 }
 
@@ -790,14 +760,10 @@ bool WrappedGLES::Serialise_glDrawElements(GLenum mode, GLsizei count, GLenum ty
   SERIALISE_ELEMENT(GLenum, Type, type);
   SERIALISE_ELEMENT(uint64_t, IdxOffset, (uint64_t)indices);
 
-  byte *idxDelete = Common_preElements(Count, Type, IdxOffset);
-
   if(m_State <= EXECUTING)
   {
     if(Check_preElements())
       m_Real.glDrawElements(Mode, Count, Type, (const void *)IdxOffset);
-
-    Common_postElements(idxDelete);
   }
 
   const string desc = m_pSerialiser->GetDebugStr();
@@ -842,6 +808,7 @@ void WrappedGLES::glDrawElements(GLenum mode, GLsizei count, GLenum type, const 
   {
     vector<GLuint> fakeBuffers;
     writeFakeVertexAttribPointerForDrawElements(count, type, indices, fakeBuffers);
+    GLuint idxBuf = createFakeElementArrayBuffer(count, type, indices);
 
     SCOPED_SERIALISE_CONTEXT(DRAWELEMENTS);
     Serialise_glDrawElements(mode, count, type, indices);
@@ -849,6 +816,7 @@ void WrappedGLES::glDrawElements(GLenum mode, GLsizei count, GLenum type, const 
     m_ContextRecord->AddChunk(scope.Get());
 
     removeFakeVertexBuffers(fakeBuffers);
+    removeFakeElementArrayBuffer(idxBuf);
 
     GLRenderState state(&m_Real, m_pSerialiser, m_State);
     state.FetchState(GetCtx(), this);
@@ -944,14 +912,10 @@ bool WrappedGLES::Serialise_glDrawRangeElements(GLenum mode, GLuint start, GLuin
   SERIALISE_ELEMENT(GLenum, Type, type);
   SERIALISE_ELEMENT(uint64_t, IdxOffset, (uint64_t)indices);
 
-  byte *idxDelete = Common_preElements(Count, Type, IdxOffset);
-
   if(m_State <= EXECUTING)
   {
     if(Check_preElements())
       m_Real.glDrawRangeElements(Mode, Start, End, Count, Type, (const void *)IdxOffset);
-
-    Common_postElements(idxDelete);
   }
 
   const string desc = m_pSerialiser->GetDebugStr();
@@ -997,6 +961,7 @@ void WrappedGLES::glDrawRangeElements(GLenum mode, GLuint start, GLuint end, GLs
   {
     vector<GLuint> fakeBuffers;
     writeFakeVertexAttribPointerForDrawElements(count, type, indices, fakeBuffers);
+    GLuint idxBuf = createFakeElementArrayBuffer(count, type, indices);
 
     SCOPED_SERIALISE_CONTEXT(DRAWRANGEELEMENTS);
     Serialise_glDrawRangeElements(mode, start, end, count, type, indices);
@@ -1004,6 +969,7 @@ void WrappedGLES::glDrawRangeElements(GLenum mode, GLuint start, GLuint end, GLs
     m_ContextRecord->AddChunk(scope.Get());
 
     removeFakeVertexBuffers(fakeBuffers);
+    removeFakeElementArrayBuffer(idxBuf);
 
     GLRenderState state(&m_Real, m_pSerialiser, m_State);
     state.FetchState(GetCtx(), this);
@@ -1028,15 +994,11 @@ bool WrappedGLES::Serialise_glDrawRangeElementsBaseVertex(GLenum mode, GLuint st
   SERIALISE_ELEMENT(uint64_t, IdxOffset, (uint64_t)indices);
   SERIALISE_ELEMENT(uint32_t, BaseVtx, basevertex);
 
-  byte *idxDelete = Common_preElements(Count, Type, IdxOffset);
-
   if(m_State <= EXECUTING)
   {
     if(Check_preElements())
       m_Real.glDrawRangeElementsBaseVertex(Mode, Start, End, Count, Type, (const void *)IdxOffset,
                                            BaseVtx);
-
-    Common_postElements(idxDelete);
   }
 
   const string desc = m_pSerialiser->GetDebugStr();
@@ -1083,6 +1045,7 @@ void WrappedGLES::glDrawRangeElementsBaseVertex(GLenum mode, GLuint start, GLuin
   {
     vector<GLuint> fakeBuffers;
     writeFakeVertexAttribPointerForDrawElements(count, type, indices, fakeBuffers);
+    GLuint idxBuf = createFakeElementArrayBuffer(count, type, indices);
 
     SCOPED_SERIALISE_CONTEXT(DRAWRANGEELEMENTSBASEVERTEX);
     Serialise_glDrawRangeElementsBaseVertex(mode, start, end, count, type, indices, basevertex);
@@ -1090,6 +1053,7 @@ void WrappedGLES::glDrawRangeElementsBaseVertex(GLenum mode, GLuint start, GLuin
     m_ContextRecord->AddChunk(scope.Get());
 
     removeFakeVertexBuffers(fakeBuffers);
+    removeFakeElementArrayBuffer(idxBuf);
 
     GLRenderState state(&m_Real, m_pSerialiser, m_State);
     state.FetchState(GetCtx(), this);
@@ -1111,14 +1075,10 @@ bool WrappedGLES::Serialise_glDrawElementsBaseVertex(GLenum mode, GLsizei count,
   SERIALISE_ELEMENT(uint64_t, IdxOffset, (uint64_t)indices);
   SERIALISE_ELEMENT(int32_t, BaseVtx, basevertex);
 
-  byte *idxDelete = Common_preElements(Count, Type, IdxOffset);
-
   if(m_State <= EXECUTING)
   {
     if(Check_preElements())
       Compat_glDrawElementsBaseVertex(Mode, Count, Type, (const void *)IdxOffset, BaseVtx);
-
-    Common_postElements(idxDelete);
   }
 
   const string desc = m_pSerialiser->GetDebugStr();
@@ -1164,6 +1124,7 @@ void WrappedGLES::glDrawElementsBaseVertex(GLenum mode, GLsizei count, GLenum ty
   {
     vector<GLuint> fakeBuffers;
     writeFakeVertexAttribPointerForDrawElements(count, type, indices, fakeBuffers);
+    GLuint idxBuf = createFakeElementArrayBuffer(count, type, indices);
 
     SCOPED_SERIALISE_CONTEXT(DRAWELEMENTS_BASEVERTEX);
     Serialise_glDrawElementsBaseVertex(mode, count, type, indices, basevertex);
@@ -1171,6 +1132,7 @@ void WrappedGLES::glDrawElementsBaseVertex(GLenum mode, GLsizei count, GLenum ty
     m_ContextRecord->AddChunk(scope.Get());
 
     removeFakeVertexBuffers(fakeBuffers);
+    removeFakeElementArrayBuffer(idxBuf);
 
     GLRenderState state(&m_Real, m_pSerialiser, m_State);
     state.FetchState(GetCtx(), this);
@@ -1192,14 +1154,10 @@ bool WrappedGLES::Serialise_glDrawElementsInstanced(GLenum mode, GLsizei count, 
   SERIALISE_ELEMENT(uint64_t, IdxOffset, (uint64_t)indices);
   SERIALISE_ELEMENT(uint32_t, InstCount, instancecount);
 
-  byte *idxDelete = Common_preElements(Count, Type, IdxOffset);
-
   if(m_State <= EXECUTING)
   {
     if(Check_preElements())
       m_Real.glDrawElementsInstanced(Mode, Count, Type, (const void *)IdxOffset, InstCount);
-
-    Common_postElements(idxDelete);
   }
 
   const string desc = m_pSerialiser->GetDebugStr();
@@ -1245,6 +1203,7 @@ void WrappedGLES::glDrawElementsInstanced(GLenum mode, GLsizei count, GLenum typ
   {
     vector<GLuint> fakeBuffers;
     writeFakeVertexAttribPointerForDrawElements(count, type, indices, fakeBuffers);
+    GLuint idxBuf = createFakeElementArrayBuffer(count, type, indices);
 
     SCOPED_SERIALISE_CONTEXT(DRAWELEMENTS_INSTANCED);
     Serialise_glDrawElementsInstanced(mode, count, type, indices, instancecount);
@@ -1252,6 +1211,7 @@ void WrappedGLES::glDrawElementsInstanced(GLenum mode, GLsizei count, GLenum typ
     m_ContextRecord->AddChunk(scope.Get());
 
     removeFakeVertexBuffers(fakeBuffers);
+    removeFakeElementArrayBuffer(idxBuf);
 
     GLRenderState state(&m_Real, m_pSerialiser, m_State);
     state.FetchState(GetCtx(), this);
@@ -1276,15 +1236,11 @@ bool WrappedGLES::Serialise_glDrawElementsInstancedBaseInstanceEXT(GLenum mode, 
   SERIALISE_ELEMENT(uint32_t, InstCount, instancecount);
   SERIALISE_ELEMENT(uint32_t, BaseInstance, baseinstance);
 
-  byte *idxDelete = Common_preElements(Count, Type, IdxOffset);
-
   if(m_State <= EXECUTING)
   {
     if(Check_preElements())
       Compat_glDrawElementsInstancedBaseInstanceEXT(Mode, Count, Type, (const void *)IdxOffset,
                                                  InstCount, BaseInstance);
-
-    Common_postElements(idxDelete);
   }
 
   const string desc = m_pSerialiser->GetDebugStr();
@@ -1331,6 +1287,7 @@ void WrappedGLES::glDrawElementsInstancedBaseInstanceEXT(GLenum mode, GLsizei co
   {
     vector<GLuint> fakeBuffers;
     writeFakeVertexAttribPointerForDrawElements(count, type, indices, fakeBuffers);
+    GLuint idxBuf = createFakeElementArrayBuffer(count, type, indices);
 
     SCOPED_SERIALISE_CONTEXT(DRAWELEMENTS_INSTANCEDBASEINSTANCE);
     Serialise_glDrawElementsInstancedBaseInstanceEXT(mode, count, type, indices, instancecount,
@@ -1339,6 +1296,7 @@ void WrappedGLES::glDrawElementsInstancedBaseInstanceEXT(GLenum mode, GLsizei co
     m_ContextRecord->AddChunk(scope.Get());
 
     removeFakeVertexBuffers(fakeBuffers);
+    removeFakeElementArrayBuffer(idxBuf);
 
     GLRenderState state(&m_Real, m_pSerialiser, m_State);
     state.FetchState(GetCtx(), this);
@@ -1363,15 +1321,11 @@ bool WrappedGLES::Serialise_glDrawElementsInstancedBaseVertex(GLenum mode, GLsiz
   SERIALISE_ELEMENT(uint32_t, InstCount, instancecount);
   SERIALISE_ELEMENT(int32_t, BaseVertex, basevertex);
 
-  byte *idxDelete = Common_preElements(Count, Type, IdxOffset);
-
   if(m_State <= EXECUTING)
   {
     if(Check_preElements())
       m_Real.glDrawElementsInstancedBaseVertex(Mode, Count, Type, (const void *)IdxOffset,
                                                InstCount, BaseVertex);
-
-    Common_postElements(idxDelete);
   }
 
   const string desc = m_pSerialiser->GetDebugStr();
@@ -1419,6 +1373,7 @@ void WrappedGLES::glDrawElementsInstancedBaseVertex(GLenum mode, GLsizei count, 
   {
     vector<GLuint> fakeBuffers;
     writeFakeVertexAttribPointerForDrawElements(count, type, indices, fakeBuffers);
+    GLuint idxBuf = createFakeElementArrayBuffer(count, type, indices);
 
     SCOPED_SERIALISE_CONTEXT(DRAWELEMENTS_INSTANCEDBASEVERTEX);
     Serialise_glDrawElementsInstancedBaseVertex(mode, count, type, indices, instancecount,
@@ -1427,6 +1382,7 @@ void WrappedGLES::glDrawElementsInstancedBaseVertex(GLenum mode, GLsizei count, 
     m_ContextRecord->AddChunk(scope.Get());
 
     removeFakeVertexBuffers(fakeBuffers);
+    removeFakeElementArrayBuffer(idxBuf);
 
     GLRenderState state(&m_Real, m_pSerialiser, m_State);
     state.FetchState(GetCtx(), this);
@@ -1451,15 +1407,11 @@ bool WrappedGLES::Serialise_glDrawElementsInstancedBaseVertexBaseInstanceEXT(
   SERIALISE_ELEMENT(int32_t, BaseVertex, basevertex);
   SERIALISE_ELEMENT(uint32_t, BaseInstance, baseinstance);
 
-  byte *idxDelete = Common_preElements(Count, Type, IdxOffset);
-
   if(m_State <= EXECUTING)
   {
     if(Check_preElements())
       Compat_glDrawElementsInstancedBaseVertexBaseInstanceEXT(
           Mode, Count, Type, (const void *)IdxOffset, InstCount, BaseVertex, BaseInstance);
-
-    Common_postElements(idxDelete);
   }
 
   const string desc = m_pSerialiser->GetDebugStr();
@@ -1510,6 +1462,7 @@ void WrappedGLES::glDrawElementsInstancedBaseVertexBaseInstanceEXT(GLenum mode, 
   {
     vector<GLuint> fakeBuffers;
     writeFakeVertexAttribPointerForDrawElements(count, type, indices, fakeBuffers);
+    GLuint idxBuf = createFakeElementArrayBuffer(count, type, indices);
 
     SCOPED_SERIALISE_CONTEXT(DRAWELEMENTS_INSTANCEDBASEVERTEXBASEINSTANCE);
     Serialise_glDrawElementsInstancedBaseVertexBaseInstanceEXT(
@@ -1518,6 +1471,7 @@ void WrappedGLES::glDrawElementsInstancedBaseVertexBaseInstanceEXT(GLenum mode, 
     m_ContextRecord->AddChunk(scope.Get());
 
     removeFakeVertexBuffers(fakeBuffers);
+    removeFakeElementArrayBuffer(idxBuf);
 
     GLRenderState state(&m_Real, m_pSerialiser, m_State);
     state.FetchState(GetCtx(), this);

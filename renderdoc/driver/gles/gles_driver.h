@@ -530,8 +530,6 @@ private:
   GLuint m_FakeBB_Color;
   GLuint m_FakeBB_DepthStencil;
   GLuint m_DefaultVAO;
-  GLuint m_FakeIdxBuf;
-  GLsizeiptr m_FakeIdxSize;
 
   ResourceId m_DefaultVAOID;
 
@@ -853,14 +851,12 @@ public:
                                         const void *value, UniformType type);
 
   // utility handling functions for glDraw*Elements* to handle pointers to indices being
-  // passed directly, with no index buffer bound. It's not allowed in core profile but
-  // it's fairly common and not too hard to support
-  byte *Common_preElements(GLsizei Count, GLenum Type, uint64_t &IdxOffset);
-  void Common_postElements(byte *idxDelete);
+  // passed directly, with no index buffer bound.
+  GLuint createFakeElementArrayBuffer(GLsizei count, GLenum type, const void *&indices);
+  void removeFakeElementArrayBuffer(GLuint idxBuf);
 
   // final check function to ensure we don't try and render with no index buffer bound
   bool Check_preElements();
-
 
   // EXT_direct_state_access
 

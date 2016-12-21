@@ -424,8 +424,6 @@ WrappedGLES::WrappedGLES(const char *logfile, const GLHookSet &funcs) : m_Real(i
   m_FakeBB_Color = 0;
   m_FakeBB_DepthStencil = 0;
   m_DefaultVAO = 0;
-  m_FakeIdxBuf = 0;
-  m_FakeIdxSize = 0;
 
   m_CurChunkOffset = 0;
   m_AddedDrawcall = false;
@@ -451,14 +449,6 @@ void WrappedGLES::Initialise(GLESInitParams &params)
 
   m_DefaultVAO = 0;
   gl.glBindVertexArray(0);
-
-  // we use this to draw from index data that was 'immediate' passed to the
-  // draw function, as i na real memory pointer
-  gl.glGenBuffers(1, &m_FakeIdxBuf);
-  gl.glBindBuffer(eGL_ELEMENT_ARRAY_BUFFER, m_FakeIdxBuf);
-  m_FakeIdxSize = 1024 * 1024;    // this buffer is resized up as needed
-  gl.glBufferStorageEXT(eGL_ELEMENT_ARRAY_BUFFER, m_FakeIdxSize, NULL, eGL_DYNAMIC_STORAGE_BIT_EXT);
-  gl.glBindBuffer(eGL_ELEMENT_ARRAY_BUFFER, 0);
 
   gl.glGenFramebuffers(1, &m_FakeBB_FBO);
   gl.glBindFramebuffer(eGL_FRAMEBUFFER, m_FakeBB_FBO);
@@ -593,8 +583,6 @@ string ToStrHelper<false, GLChunkType>::Get(const GLChunkType &el)
 
 WrappedGLES::~WrappedGLES()
 {
-  if(m_FakeIdxBuf)
-    m_Real.glDeleteBuffers(1, &m_FakeIdxBuf);
   if(m_FakeBB_FBO)
     m_Real.glDeleteFramebuffers(1, &m_FakeBB_FBO);
   if(m_FakeBB_Color)
