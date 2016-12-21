@@ -1530,9 +1530,22 @@ void GLResourceManager::Apply_InitialState(GLResource live, InitialContentData i
       gl.glBindFramebuffer(eGL_DRAW_FRAMEBUFFER, live.name);
       gl.glBindFramebuffer(eGL_READ_FRAMEBUFFER, live.name);
 
+      GLint numCols = 8;
+      gl.glGetIntegerv(eGL_MAX_COLOR_ATTACHMENTS, &numCols);
+
       for(int i = 0; i < (int)ARRAY_COUNT(data->Attachments); i++)
       {
         FramebufferAttachmentData &a = data->Attachments[i];
+
+        if(data->attachmentNames[i] != eGL_DEPTH_ATTACHMENT &&
+           data->attachmentNames[i] != eGL_STENCIL_ATTACHMENT &&
+           data->attachmentNames[i] != eGL_DEPTH_STENCIL_ATTACHMENT)
+        {
+          // color attachment
+          int attachNum = data->attachmentNames[i] - eGL_COLOR_ATTACHMENT0;
+          if(attachNum >= numCols) // invalid attachment
+            continue;
+        }
 
         GLuint obj = a.obj == ResourceId() ? 0 : GetLiveResource(a.obj).name;
 
@@ -1597,7 +1610,10 @@ void GLResourceManager::Apply_InitialState(GLResource live, InitialContentData i
       if(data->ReadBuffer == eGL_BACK || data->ReadBuffer == eGL_FRONT)
         data->ReadBuffer = eGL_COLOR_ATTACHMENT0;
 
-      gl.glDrawBuffers(ARRAY_COUNT(data->DrawBuffers), data->DrawBuffers);
+      GLuint maxDrawBuffers = 0;
+      gl.glGetIntegerv(eGL_MAX_DRAW_BUFFERS, (GLint*)&maxDrawBuffers);
+
+      gl.glDrawBuffers(RDCMIN(maxDrawBuffers, (GLuint)ARRAY_COUNT(data->DrawBuffers)), data->DrawBuffers);
 
       gl.glReadBuffer(data->ReadBuffer);
 
