@@ -237,7 +237,7 @@ bool Socket::RecvDataBlocking(void *buf, uint32_t length)
 
 Socket *CreateServerSocket(const char *bindaddr, uint16_t port, int queuesize)
 {
-#if defined(LINUX_ABSTRACT_SOCKET) || defined(ANDORID_ABSTRACT_SOCKET)
+#if defined(LINUX_ABSTRACT_SOCKET) || defined(ANDROID_ABSTRACT_SOCKET)
   char socketName[256] = {0};
   StringFormat::snprintf(socketName, 256, "/renderdoc/%d", port);
   int s = socket(AF_UNIX, SOCK_STREAM, 0);
